@@ -1,0 +1,273 @@
+{
+    "id": "memory-lancedb-lite",
+    "name": "Memory (LanceDB Lite)",
+    "description": "Streamlined LanceDB-backed long-term memory with hybrid retrieval, multi-scope isolation, and security hardening",
+    "version": "1.0.0",
+    "kind": "memory",
+    "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "embedding": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "const": "openai-compatible"
+                    },
+                    "apiKey": {
+                        "type": "string"
+                    },
+                    "model": {
+                        "type": "string"
+                    },
+                    "baseURL": {
+                        "type": "string"
+                    },
+                    "dimensions": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "taskQuery": {
+                        "type": "string",
+                        "description": "Embedding task for queries (e.g. retrieval.query)"
+                    },
+                    "taskPassage": {
+                        "type": "string",
+                        "description": "Embedding task for passages (e.g. retrieval.passage)"
+                    },
+                    "normalized": {
+                        "type": "boolean",
+                        "description": "Request normalized embeddings when supported"
+                    }
+                },
+                "required": [
+                    "apiKey"
+                ]
+            },
+            "dbPath": {
+                "type": "string"
+            },
+            "enableManagementTools": {
+                "type": "boolean",
+                "default": false
+            },
+            "autoCapture": {
+                "type": "boolean"
+            },
+            "autoRecall": {
+                "type": "boolean",
+                "default": false
+            },
+            "autoRecallMinLength": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200,
+                "default": 15
+            },
+            "captureAssistant": {
+                "type": "boolean"
+            },
+            "retrieval": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "hybrid",
+                            "vector"
+                        ],
+                        "default": "hybrid"
+                    },
+                    "vectorWeight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.7
+                    },
+                    "bm25Weight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.3
+                    },
+                    "minScore": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.3
+                    },
+                    "rerank": {
+                        "type": "string",
+                        "enum": [
+                            "cross-encoder",
+                            "lightweight",
+                            "none"
+                        ],
+                        "default": "cross-encoder"
+                    },
+                    "rerankApiKey": {
+                        "type": "string",
+                        "description": "API key for reranker service"
+                    },
+                    "rerankModel": {
+                        "type": "string",
+                        "default": "jina-reranker-v3"
+                    },
+                    "rerankEndpoint": {
+                        "type": "string",
+                        "default": "https://api.jina.ai/v1/rerank"
+                    },
+                    "rerankProvider": {
+                        "type": "string",
+                        "enum": [
+                            "jina",
+                            "siliconflow",
+                            "voyage",
+                            "pinecone"
+                        ],
+                        "default": "jina"
+                    },
+                    "candidatePoolSize": {
+                        "type": "integer",
+                        "minimum": 10,
+                        "maximum": 100,
+                        "default": 20
+                    },
+                    "recencyHalfLifeDays": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 365,
+                        "default": 14
+                    },
+                    "recencyWeight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 0.5,
+                        "default": 0.1
+                    },
+                    "filterNoise": {
+                        "type": "boolean",
+                        "default": true
+                    },
+                    "lengthNormAnchor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 5000,
+                        "default": 500
+                    },
+                    "hardMinScore": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "default": 0.35
+                    },
+                    "timeDecayHalfLifeDays": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 365,
+                        "default": 60
+                    }
+                }
+            },
+            "sessionMemory": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Store session summaries to LanceDB on /new command"
+                    },
+                    "messageCount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 15
+                    }
+                }
+            },
+            "scopes": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "default": {
+                        "type": "string",
+                        "default": "global"
+                    },
+                    "definitions": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                                "description": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "agentAccess": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "required": [
+            "embedding"
+        ]
+    },
+    "uiHints": {
+        "embedding.apiKey": {
+            "label": "API Key",
+            "sensitive": true,
+            "placeholder": "sk-proj-... or ${OPENAI_API_KEY}",
+            "help": "API key for the embedding provider"
+        },
+        "embedding.model": {
+            "label": "Embedding Model",
+            "placeholder": "text-embedding-3-small",
+            "help": "Embedding model name"
+        },
+        "embedding.baseURL": {
+            "label": "Base URL",
+            "placeholder": "https://api.openai.com/v1",
+            "help": "Custom base URL for OpenAI-compatible endpoints",
+            "advanced": true
+        },
+        "autoCapture": {
+            "label": "Auto-Capture",
+            "help": "Automatically capture important information from conversations"
+        },
+        "autoRecall": {
+            "label": "Auto-Recall",
+            "help": "Automatically inject relevant memories into context"
+        },
+        "sessionMemory.enabled": {
+            "label": "Session Memory",
+            "help": "Store session summaries to LanceDB when /new is triggered"
+        },
+        "retrieval.rerank": {
+            "label": "Reranking Mode",
+            "help": "Re-score fused results for better quality",
+            "advanced": true
+        },
+        "retrieval.rerankApiKey": {
+            "label": "Reranker API Key",
+            "sensitive": true,
+            "advanced": true
+        },
+        "enableManagementTools": {
+            "label": "Management Tools",
+            "help": "Enable memory_list and memory_stats tools",
+            "advanced": true
+        }
+    }
+}
