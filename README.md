@@ -29,7 +29,19 @@ Inspired by [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro) â€
 | **File Safety** | Read-only access restricted to `~/.openclaw/`; no destructive file operations |
 | **Lightweight** | Focused on core retrieval and storage â€” no CLI, no migration tool, no auto-backup |
 | **All 6 Tools** | `memory_recall`, `memory_store`, `memory_forget`, `memory_update`, `memory_stats`, `memory_list` |
+## How It Works
 
+This plugin solves both short-term context loss and long-term knowledge retention natively.
+
+### Short-Term Context (Session Memory)
+When you chat with OpenClaw, the plugin automatically maintains a rolling window of your recent messages in-memory. If `sessionMemory.enabled` is `true`, the plugin will track the context of your active conversation without requiring tedious `micro_sync` scripts or constant reads/writes to local Markdown files. 
+
+### Long-Term Retention (Vector Storage)
+If `autoCapture` and `autoRecall` are enabled, the plugin works behind the scenes to:
+1. **Auto-Capture**: Silently evaluate your statements and run `memory_store` on facts, preferences, and important context.
+2. **Auto-Recall**: Behind the scenes, automatically retrieve relevant past memories from LanceDB and inject them into the agent's context window.
+
+You can also have the agent manually store (`memory_store`) or retrieve (`memory_recall`) information when specifically instructed.
 ## Quick Start
 
 ```bash
