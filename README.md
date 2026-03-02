@@ -42,6 +42,39 @@ If `autoCapture` and `autoRecall` are enabled, the plugin works behind the scene
 2. **Auto-Recall**: Behind the scenes, automatically retrieve relevant past memories from LanceDB and inject them into the agent's context window.
 
 You can also have the agent manually store (`memory_store`) or retrieve (`memory_recall`) information when specifically instructed.
+
+## Best Practice: Hybrid Workflow
+While LanceDB perfectly handles long-term facts, navigating between different continuous tasks across days works best when combined with a lightweight "State Machine" or "Scratchpad" approach (like a minimal `MEMORY.md` skill). 
+
+### How to combine them seamlessly:
+1. **The Notebook (Long-Term Vector DB)**: Rely entirely on `memory-lancedb-lite` for persisting important personal facts, strategy rules, or codebase structures. You don't need to manually synchronize files anymore.
+   - *Control Method A (AutoCapture)*: The agent silently captures rules like *"Always assume I want TypeScript unless specified otherwise"* as you chat.
+   - *Control Method B (Agentic Handover)*: When you figure out a complex bug solution, tell the agent: *"Let's save this bug fix into your long-term memory so we don't forget it next time."*
+
+2. **The Sticky Note (Short-Term State Machine)**: Create a simple custom skill (e.g. `memory-manager`) that instructs the agent to maintain a single `MEMORY.md` file (strictly kept under 500 words).
+   - Use this file **only for your active context**: *"Currently debugging an issue in login.js"*, *"User will answer my question tomorrow"*, or *"Remaining TODOs"*.
+   - *Workflow*: When ending your workday, tell the agent: *"I'm off for the day. Please update MEMORY.md with today's progress and where we should pick up tomorrow, and memory_store any new major facts we learned."*
+
+When you return and start a new session (`/new`), the agent pulls the "Sticky Note" to see immediately what you were working on, while relying on the "Notebook" for any long-term knowledge required.
+
+## Testing Your Memory
+
+To verify your memory is functioning correctly, try the following tests inside an OpenClaw session:
+
+### Test 1: Short-Term Session Memory
+*Checks if the agent can remember within the same chat session without saving to long-term storage.*
+1. Say: *"Let's play a game. My secret codeword is 'Purple Elephant'. Don't write it to long-term memory."*
+2. Ask unrelated questions or ask it to do a small task.
+3. Ask: *"What was my secret codeword?"*
+If it correctly says "Purple Elephant," session memory is actively working.
+
+### Test 2: Long-Term Vector Memory
+*Checks if the agent successfully stores and retrieves across completely new chat boundaries.*
+1. Say: *"Please keep this in your long-term memory: My favorite pizza topping is extra jalapeños."*
+2. Confirm the agent replied that it successfully stored the information.
+3. Start a completely new chat session by typing `/new` (this wipes the short-term context).
+4. Ask: *"Do you remember what my favorite pizza topping is?"*
+If it correctly retrieves "extra jalapeños," the LanceDB integration is functioning perfectly!
 ## Quick Start
 
 ```bash
