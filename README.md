@@ -103,7 +103,12 @@ openclaw gateway restart
 
 ### Data migration
 
-`memory-lancedb-lite` uses its own LanceDB database at `~/.openclaw/memory/lancedb-lite/`. Your old memories from previous plugins are **not** automatically migrated. If you need to preserve important memories, manually re-store them using the `memory_store` tool after installation.
+`memory-lancedb-lite` uses its own LanceDB database at `~/.openclaw/memory/lancedb-lite/`. Your old memories from previous plugins are **not** automatically migrated.
+
+**How to migrate file-based memories (e.g., from `memory-core`):**
+The easiest way to migrate is to ask your OpenClaw agent to do it for you! Open a new chat session and send a prompt like:
+
+> *"I have just installed a new LanceDB memory plugin. Please read my old memory files (e.g., `MEMORY.md`, or the `.md` files in my `memory/` folder), extract the core facts, preferences, and important context about me, and use your `memory_store` tool to save them into your new long-term memory."*
 
 > **Note:** Existing memories from `memory-hybrid` or `memory-core` remain in their original locations and are not deleted. You can switch back by reversing the config changes above.
 
