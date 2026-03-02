@@ -29,20 +29,24 @@ Based on [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro), rewr
 | **Removed** | CLI commands, migration tool, auto-backup, JSONL distillation |
 | **Kept** | Full hybrid retrieval pipeline, all scoring stages, session memory, all 6 agent tools |
 
-## Installation (Ubuntu / macOS / Windows WSL)
+## Quick Start
 
 ```bash
-# 1. Clone into OpenClaw plugins directory
-cd ~/.openclaw/plugins
+# 1. Clone into OpenClaw extensions directory
+cd ~/.openclaw/workspace/extensions-dev
 git clone https://github.com/JovianY/memory-lancedb-lite.git
 
-# 2. Run the installer (auto-detects platform, installs Node.js if needed, builds)
+# 2. Run the installer
 cd memory-lancedb-lite
 chmod +x install.sh
 ./install.sh
+
+# 3. Configure (see Configuration section below)
+# 4. Restart OpenClaw
 ```
 
-The installer automatically:
+### What the installer does
+
 - Detects your OS, architecture, and distro
 - Installs Node.js 22 LTS if missing (via NodeSource / Homebrew / nvm)
 - Installs build tools (`gcc`, `make`, `python3`) on Linux if needed
@@ -50,20 +54,55 @@ The installer automatically:
 - Builds TypeScript and validates all output files
 - Checks your OpenClaw config and provides setup instructions
 
+## Supported Embedding Models
+
+The plugin uses the OpenAI SDK under the hood, but supports **any provider with an OpenAI-compatible embeddings endpoint** via the `baseURL` option.
+
+| Provider | Model | Dimensions | Config Key |
+|----------|-------|-----------|------------|
+| **OpenAI** | `text-embedding-3-small` | 1536 | `OPENAI_API_KEY` |
+| **OpenAI** | `text-embedding-3-large` | 3072 | `OPENAI_API_KEY` |
+| **Google Gemini** | `text-embedding-004` | 768 | `GEMINI_API_KEY` |
+| **Google Gemini** | `gemini-embedding-001` | 3072 | `GEMINI_API_KEY` |
+| **Nomic** | `nomic-embed-text` | 768 | — |
+| **Jina** | `jina-embeddings-v5-text-small` | 1024 | — |
+| **Jina** | `jina-embeddings-v5-text-nano` | 768 | — |
+| **Local** | `all-MiniLM-L6-v2` | 384 | — |
+| **Local** | `all-mpnet-base-v2` | 768 | — |
+| **Local** | `BAAI/bge-m3` | 1024 | — |
+
+> For models not listed above, set `embedding.dimensions` manually in config.
+
 ## Configuration
 
-Add to your OpenClaw config (`~/.openclaw/config.json`):
+Add the following to your OpenClaw config (`~/.openclaw/openclaw.json` or `~/.openclaw/config.json`).
 
-```json
+You also need to add the plugin to `plugins.allow`, `plugins.load.paths`, and optionally set `plugins.slots.memory`.
+
+### Full config example
+
+```jsonc
 {
   "plugins": {
+    "allow": [
+      // ... your other plugins ...
+      "memory-lancedb-lite"
+    ],
+    "load": {
+      "paths": [
+        // ... your other plugin paths ...
+        "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite"
+      ]
+    },
+    "slots": {
+      "memory": "memory-lancedb-lite"
+    },
     "entries": {
       "memory-lancedb-lite": {
         "enabled": true,
         "config": {
           "embedding": {
-            "apiKey": "${OPENAI_API_KEY}",
-            "model": "text-embedding-3-small"
+            // See provider examples below
           },
           "autoCapture": true,
           "autoRecall": true,
@@ -74,21 +113,121 @@ Add to your OpenClaw config (`~/.openclaw/config.json`):
           "enableManagementTools": true
         }
       }
+    },
+    "installs": {
+      "memory-lancedb-lite": {
+        "source": "path",
+        "sourcePath": "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite",
+        "installPath": "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite",
+        "version": "1.0.0",
+        "installedAt": "2026-03-02T00:00:00.000Z"
+      }
     }
   }
 }
 ```
 
+### Embedding provider examples
+
+#### OpenAI (default)
+
+```json
+{
+  "embedding": {
+    "apiKey": "${OPENAI_API_KEY}",
+    "model": "text-embedding-3-small"
+  }
+}
+```
+
+#### Google Gemini
+
+Uses Google's OpenAI-compatible endpoint. Set `GEMINI_API_KEY` in your `.env` file.
+
+```json
+{
+  "embedding": {
+    "apiKey": "${GEMINI_API_KEY}",
+    "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "model": "gemini-embedding-001"
+  }
+}
+```
+
+#### OpenRouter
+
+```json
+{
+  "embedding": {
+    "apiKey": "${OPENROUTER_API_KEY}",
+    "baseURL": "https://openrouter.ai/api/v1",
+    "model": "text-embedding-3-small"
+  }
+}
+```
+
+#### Ollama (local)
+
+```json
+{
+  "embedding": {
+    "apiKey": "ollama",
+    "baseURL": "http://localhost:11434/v1",
+    "model": "nomic-embed-text"
+  }
+}
+```
+
+### Config options reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `embedding.apiKey` | string | — | API key (supports `${ENV_VAR}` syntax) |
+| `embedding.baseURL` | string | OpenAI | Custom API endpoint for non-OpenAI providers |
+| `embedding.model` | string | — | Embedding model name |
+| `embedding.dimensions` | number | auto | Override vector dimensions (auto-detected for known models) |
+| `autoCapture` | boolean | `false` | Automatically capture important info from conversations |
+| `autoRecall` | boolean | `false` | Automatically search memories on each message |
+| `sessionMemory.enabled` | boolean | `false` | Enable session-level memory tracking |
+| `sessionMemory.messageCount` | number | `10` | Number of messages to include in session context |
+| `enableManagementTools` | boolean | `false` | Enable `memory_stats` and `memory_list` tools |
+
 ## Agent Tools
 
 | Tool | Description |
 |------|-------------|
-| `memory_recall` | Search memories using hybrid retrieval |
+| `memory_recall` | Search memories using hybrid retrieval (vector + BM25 + rerank) |
 | `memory_store` | Save information to long-term memory |
 | `memory_forget` | Delete memories by ID or search |
 | `memory_update` | Update existing memories in-place |
-| `memory_stats` | Get memory statistics (optional) |
-| `memory_list` | List recent memories (optional) |
+| `memory_stats` | Get memory statistics (requires `enableManagementTools`) |
+| `memory_list` | List recent memories (requires `enableManagementTools`) |
+
+## Verify Installation
+
+After restarting OpenClaw, check the logs for:
+
+```
+memory-lancedb-lite@1.0.0: plugin registered (db: ~/.openclaw/memory/lancedb-lite, model: ...)
+memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mode: hybrid, FTS: enabled)
+```
+
+### Quick test
+
+1. Tell the agent: *"Please remember: my favorite color is blue"*
+2. Start a new session (`/new`)
+3. Ask: *"What is my favorite color?"*
+4. If the agent answers correctly → memory is working! ✅
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `Unsupported embedding model` | Add `embedding.dimensions` to config, or use a model from the supported list |
+| `Environment variable XXX is not set` | Make sure the API key is set in `~/.openclaw/.env` |
+| `Failed to generate embedding` | Check that `baseURL` and `apiKey` are correct for your provider |
+| LanceDB native module errors | Re-run `./install.sh` to rebuild native modules for your platform |
+| Plugin not loading | Ensure the plugin is in `plugins.allow`, `plugins.load.paths`, and `plugins.entries` |
 
 ## Security
 
