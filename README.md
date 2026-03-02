@@ -1,10 +1,10 @@
 # memory-lancedb-lite
 
-**Streamlined, security-hardened LanceDB memory plugin for [OpenClaw](https://github.com/openclaw/openclaw)**
+**Lightweight LanceDB memory plugin for [OpenClaw](https://github.com/openclaw/openclaw)**
 
 Hybrid Retrieval (Vector + BM25) · Cross-Encoder Rerank · Multi-Scope Isolation
 
-Inspired by [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro) — streamlined for lightweight deployment with a focus on security hardening.
+Inspired by [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro) — streamlined for easy deployment.
 
 ## Supported Platforms
 
@@ -282,9 +282,9 @@ memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mod
 | LanceDB native module errors | Re-run `./install.sh` to rebuild native modules for your platform |
 | Plugin not loading | Ensure the plugin is in `plugins.allow`, `plugins.load.paths`, and `plugins.entries` |
 
-## Security
+## Design Principles
 
-This plugin is designed with a minimal attack surface:
+This plugin is designed to be lightweight and safe to run:
 
 - No `eval()`, `new Function()`, or dynamic code execution
 - No `child_process.exec()` or `spawn`
