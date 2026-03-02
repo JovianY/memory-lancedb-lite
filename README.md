@@ -44,18 +44,16 @@ If `autoCapture` and `autoRecall` are enabled, the plugin works behind the scene
 You can also have the agent manually store (`memory_store`) or retrieve (`memory_recall`) information when specifically instructed.
 
 ## Best Practice: Hybrid Workflow
-While LanceDB perfectly handles long-term facts, navigating between different continuous tasks across days works best when combined with a lightweight "State Machine" or "Scratchpad" approach (like a minimal `MEMORY.md` skill). 
+While LanceDB handles long-term facts, navigating between continuous tasks across days works best when combined with a lightweight "State Machine" or "Scratchpad" approach (like a minimal `MEMORY.md` skill, e.g., `memory-manager`).
 
-### How to combine them seamlessly:
-1. **The Notebook (Long-Term Vector DB)**: Rely entirely on `memory-lancedb-lite` for persisting important personal facts, strategy rules, or codebase structures. You don't need to manually synchronize files anymore.
-   - *Control Method A (AutoCapture)*: The agent silently captures rules like *"Always assume I want TypeScript unless specified otherwise"* as you chat.
-   - *Control Method B (Agentic Handover)*: When you figure out a complex bug solution, tell the agent: *"Let's save this bug fix into your long-term memory so we don't forget it next time."*
+1. **The Notebook (Long-Term Vector DB)**: Rely on `memory-lancedb-lite` for persisting facts and rules. (e.g., auto-capture or manual `memory_store`).
+2. **The Sticky Note (Short-Term State Machine)**: Use a `MEMORY.md` file (kept under 500 words) for active context: *"Currently debugging login.js"*.
 
-2. **The Sticky Note (Short-Term State Machine)**: Create a simple custom skill (e.g. `memory-manager`) that instructs the agent to maintain a single `MEMORY.md` file (strictly kept under 500 words).
-   - Use this file **only for your active context**: *"Currently debugging an issue in login.js"*, *"User will answer my question tomorrow"*, or *"Remaining TODOs"*.
-   - *Workflow*: When ending your workday, tell the agent: *"I'm off for the day. Please update MEMORY.md with today's progress and where we should pick up tomorrow, and memory_store any new major facts we learned."*
+**✨ The Handover Command (`/save+new`)**
+If you use a custom skill like `memory-manager`, you can set up a handover command. When ending your workday, simply type:
+> `/save+new` (or `/wrapup`)
 
-When you return and start a new session (`/new`), the agent pulls the "Sticky Note" to see immediately what you were working on, while relying on the "Notebook" for any long-term knowledge required.
+The agent will automatically store important new facts to LanceDB, update your `MEMORY.md` progress, and tell you it's safe to type `/new` to close the session.
 
 ## Testing Your Memory
 
@@ -92,13 +90,7 @@ chmod +x install.sh
 ```
 
 ### What the installer does
-
-- Detects your OS, architecture, and distro
-- Installs Node.js 22 LTS if missing (via NodeSource / Homebrew / nvm)
-- Installs build tools (`gcc`, `make`, `python3`) on Linux if needed
-- Detects and replaces cross-platform native modules
-- Builds TypeScript and validates all output files
-- Checks your OpenClaw config and provides setup instructions
+The `install.sh` script automatically detects your platform, installs Node.js if missing, builds native LanceDB modules, and helps configure `openclaw.json`.
 
 ## Migrating from Other Memory Plugins
 
@@ -232,53 +224,17 @@ You also need to add the plugin to `plugins.allow`, `plugins.load.paths`, and op
 
 ### Embedding provider examples
 
-#### OpenAI (default)
+This plugin supports any OpenAI-compatible embeddings endpoint. Example config setups for `openclaw.json`:
 
 ```json
-{
-  "embedding": {
-    "apiKey": "${OPENAI_API_KEY}",
-    "model": "text-embedding-3-small"
-  }
-}
-```
+// OpenAI
+"embedding": { "apiKey": "${OPENAI_API_KEY}", "model": "text-embedding-3-small" }
 
-#### Google Gemini
+// Gemini
+"embedding": { "apiKey": "${GEMINI_API_KEY}", "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai/", "model": "gemini-embedding-001" }
 
-Uses Google's OpenAI-compatible endpoint. Set `GEMINI_API_KEY` in your `.env` file.
-
-```json
-{
-  "embedding": {
-    "apiKey": "${GEMINI_API_KEY}",
-    "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "model": "gemini-embedding-001"
-  }
-}
-```
-
-#### OpenRouter
-
-```json
-{
-  "embedding": {
-    "apiKey": "${OPENROUTER_API_KEY}",
-    "baseURL": "https://openrouter.ai/api/v1",
-    "model": "text-embedding-3-small"
-  }
-}
-```
-
-#### Ollama (local)
-
-```json
-{
-  "embedding": {
-    "apiKey": "ollama",
-    "baseURL": "http://localhost:11434/v1",
-    "model": "nomic-embed-text"
-  }
-}
+// Local Ollama
+"embedding": { "apiKey": "ollama", "baseURL": "http://localhost:11434/v1", "model": "nomic-embed-text" }
 ```
 
 ### Config options reference
