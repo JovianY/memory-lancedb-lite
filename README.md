@@ -54,6 +54,58 @@ chmod +x install.sh
 - Builds TypeScript and validates all output files
 - Checks your OpenClaw config and provides setup instructions
 
+## Migrating from Other Memory Plugins
+
+If you are currently using another memory plugin (e.g., `memory-hybrid`, `memory-core`, `memory-lancedb`), you **must** disable it before enabling `memory-lancedb-lite`. OpenClaw's `plugins.slots.memory` only allows **one** active memory plugin at a time.
+
+### Step 1: Disable existing memory plugins
+
+In your `openclaw.json`, set the old plugin to `enabled: false`:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      // Disable the old memory plugin
+      "memory-hybrid": { "enabled": false },
+      // Enable memory-lancedb-lite
+      "memory-lancedb-lite": { "enabled": true, "config": { /* ... */ } }
+    },
+    "slots": {
+      // Point the memory slot to the new plugin
+      "memory": "memory-lancedb-lite"
+    }
+  }
+}
+```
+
+### Step 2: Update related skills (if applicable)
+
+If you have custom OpenClaw skills that reference file-based memory systems (e.g., `MEMORY.md`, `memory/decisions.md`), update them to use the plugin's agent tools instead:
+
+| Old approach (file-based) | New approach (memory-lancedb-lite) |
+|---|---|
+| Read `MEMORY.md` | Use `memory_recall` tool to search memories |
+| Write to `memory/decisions.md` | Use `memory_store` tool to save memories |
+| Run `micro_sync.sh` script | Not needed — plugin handles persistence |
+| Manual `MEMORY.md` cleanup | Use `memory_forget` or `memory_update` tools |
+
+### Step 3: Restart OpenClaw
+
+```bash
+# systemd
+systemctl --user restart openclaw-gateway.service
+
+# or CLI
+openclaw gateway restart
+```
+
+### Data migration
+
+`memory-lancedb-lite` uses its own LanceDB database at `~/.openclaw/memory/lancedb-lite/`. Your old memories from previous plugins are **not** automatically migrated. If you need to preserve important memories, manually re-store them using the `memory_store` tool after installation.
+
+> **Note:** Existing memories from `memory-hybrid` or `memory-core` remain in their original locations and are not deleted. You can switch back by reversing the config changes above.
+
 ## Supported Embedding Models
 
 The plugin uses the OpenAI SDK under the hood, but supports **any provider with an OpenAI-compatible embeddings endpoint** via the `baseURL` option.
