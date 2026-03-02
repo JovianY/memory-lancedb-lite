@@ -284,7 +284,7 @@ memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mod
 
 ## Design Principles
 
-This plugin is designed to be lightweight and safe to run:
+This plugin is designed to be easy to run:
 
 - No `eval()`, `new Function()`, or dynamic code execution
 - No `child_process.exec()` or `spawn`
