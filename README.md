@@ -18,16 +18,17 @@ Inspired by [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro) �
 >
 > LanceDB uses platform-specific native binaries. The included `install.sh` script automatically detects your platform and installs the correct native modules.
 
-## What's Different from memory-lancedb-pro?
+## Features
 
-| Area | Change |
-|------|--------|
-| **Security** | Strict input validation, path traversal protection, no `eval`/`exec`, pinned deps |
-| **SQL safety** | UUID/scope validation before SQL interpolation, improved escaping |
-| **Env vars** | Safe `${VAR}` resolution (strict regex, no ReDoS risk) |
-| **File I/O** | Read-only access restricted to `~/.openclaw/`; no `writeFile`/`unlink` |
-| **Removed** | CLI commands, migration tool, auto-backup, JSONL distillation |
-| **Kept** | Full hybrid retrieval pipeline, all scoring stages, session memory, all 6 agent tools |
+| Area | Description |
+|------|-------------|
+| **Hybrid Retrieval** | Full vector + BM25 search pipeline with cross-encoder reranking |
+| **Security** | Strict input validation, path traversal protection, pinned dependencies |
+| **SQL Safety** | UUID/scope validation before SQL interpolation, safe escaping |
+| **Env Vars** | Safe `${VAR}` resolution with strict regex |
+| **File Safety** | Read-only access restricted to `~/.openclaw/`; no destructive file operations |
+| **Lightweight** | Focused on core retrieval and storage — no CLI, no migration tool, no auto-backup |
+| **All 6 Tools** | `memory_recall`, `memory_store`, `memory_forget`, `memory_update`, `memory_stats`, `memory_list` |
 
 ## Quick Start
 
@@ -283,15 +284,17 @@ memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mod
 
 ## Security
 
-- ❌ No `eval()`, `new Function()`, or dynamic code execution
-- ❌ No `child_process.exec()` or `spawn`
-- ❌ No hardcoded API keys or secrets
-- ❌ No `writeFile` or `unlink` operations
-- ✅ Path traversal protection on all file reads
-- ✅ Input validation with length limits on all tools
-- ✅ Strict UUID/scope validation before SQL interpolation
-- ✅ HTTPS-only network requests with 5s timeout
-- ✅ Dependencies pinned to exact versions
+This plugin is designed with a minimal attack surface:
+
+- No `eval()`, `new Function()`, or dynamic code execution
+- No `child_process.exec()` or `spawn`
+- No hardcoded API keys or secrets
+- No destructive file operations (`writeFile`, `unlink`)
+- Path traversal protection on all file reads
+- Input validation with length limits on all tools
+- Strict UUID/scope validation before SQL interpolation
+- HTTPS-only network requests with 5s timeout
+- All dependencies pinned to exact versions
 
 ## License
 
