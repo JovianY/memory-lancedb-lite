@@ -4,7 +4,7 @@
 
 Hybrid Retrieval (Vector + BM25) · Cross-Encoder Rerank · Multi-Scope Isolation
 
-Based on [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro), rewritten with security hardening and reduced attack surface.
+Inspired by [memory-lancedb-pro](https://github.com/win4r/memory-lancedb-pro) — streamlined for lightweight deployment with a focus on security hardening.
 
 ## Supported Platforms
 
