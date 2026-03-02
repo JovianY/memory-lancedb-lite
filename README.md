@@ -81,14 +81,14 @@ In your `openclaw.json`, set the old plugin to `enabled: false`:
 
 ### Step 2: Update related skills (if applicable)
 
-If you have custom OpenClaw skills that reference file-based memory systems (e.g., `MEMORY.md`, `memory/decisions.md`), update them to use the plugin's agent tools instead:
+If you have custom OpenClaw skills that manage memories by reading/writing files directly, consider updating them to use the plugin's agent tools instead:
 
-| Old approach (file-based) | New approach (memory-lancedb-lite) |
-|---|---|
-| Read `MEMORY.md` | Use `memory_recall` tool to search memories |
-| Write to `memory/decisions.md` | Use `memory_store` tool to save memories |
-| Run `micro_sync.sh` script | Not needed — plugin handles persistence |
-| Manual `MEMORY.md` cleanup | Use `memory_forget` or `memory_update` tools |
+- **`memory_recall`** — search and retrieve stored memories
+- **`memory_store`** — save new information to long-term memory
+- **`memory_update`** — modify existing memories
+- **`memory_forget`** — delete memories no longer needed
+
+The plugin handles all persistence automatically — no cron jobs or manual file management required.
 
 ### Step 3: Restart OpenClaw
 
