@@ -175,7 +175,7 @@ async function readSessionMessages(filePath: string, messageCount: number): Prom
                         const text = Array.isArray(msg.content)
                             ? msg.content.find((c: any) => c.type === "text")?.text
                             : msg.content;
-                        if (text && !text.startsWith("/") && !text.includes("<relevant-memories>")) {
+                        if (text && !text.startsWith("/") && !text.startsWith("{") && !text.includes("<relevant-memories>")) {
                             messages.push(`${role}: ${text}`);
                         }
                     }
@@ -619,7 +619,26 @@ const memoryLanceDBLitePlugin = {
                                     ? await readSessionMessages(activeSessionFilePath, 200)
                                     : recentRawMessages.join("\n");
 
-                                const prompt = `You are a Session Handover AI.\nThe user is migrating from the current chat session to a new fresh session.\nPlease extract the following from the conversation history below:\n1. Any temporary rules, secret codewords, or constraints explicitly asked NOT to be saved to long-term database.\n2. The immediate next steps or unfinished TODOs.\nRespond STRICTLY with a concise summary (max 100 words). Do not include greetings. If there are no such items, just say "No specific temporary constraints."\n\nConversation History:\n${fullHistoryText}`;
+                                const prompt = [
+                                    "You are a Session Handover AI.",
+                                    "The user is migrating from the current chat session to a new fresh session.",
+                                    "Your GOAL is to extract vital 'Ephemeral State' that MUST be carried over.",
+                                    "",
+                                    "CRITICAL ITEMS TO EXTRACT:",
+                                    "1. Secret codewords, temporary passwords, or '通關密語'.",
+                                    "2. Temporary rules or constraints explicitly asked NOT to be stored in the long-term database.",
+                                    "3. The immediate context of the last few messages and unfinished TODOs.",
+                                    "",
+                                    "RULES:",
+                                    "- If a codeword or password is found, YOU MUST INCLUDE IT EXACTLY.",
+                                    "- Be concise but include ALL items from the list above.",
+                                    "- If there is absolutely nothing but greetings, respond with: No specific temporary constraints.",
+                                    "",
+                                    "Conversation History:",
+                                    "---",
+                                    fullHistoryText,
+                                    "---"
+                                ].join("\n");
 
                                 const completion = await openai.chat.completions.create({
                                     model: summarizerConfig.model || "gpt-4o-mini",
@@ -672,18 +691,20 @@ const memoryLanceDBLitePlugin = {
             // Ephemeral Context Injection Hook
             // ================================================================
 
-            // Use api.on for standard events. For message injection, we use "message:received" event.
-            api.on("message:received", async (event: any) => {
+            api.on("message", async (event: any) => {
+                if (event.action !== "received" && event.action !== "received:before" && event.action !== "before_received") {
+                    return;
+                }
                 const ctx = event.context;
-                api.logger.debug(`ephemeral-injection: check (action: ${event.action}, from: ${ctx?.from})`);
+                api.logger.debug(`ephemeral-injection: message event triggered (action: ${event.action})`);
 
                 const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
                 try {
                     const content = await readFile(ephemeralPath, "utf-8");
                     const data = JSON.parse(content);
 
-                    if (data && data.context) {
-                        api.logger.info(`ephemeral-injection: found handover file from ${data.date}. content length: ${data.context.length}`);
+                    if (data && data.context && data.context !== "No specific temporary constraints.") {
+                        api.logger.info(`ephemeral-injection: injecting handover context from ${data.date}. content: ${data.context.substring(0, 50)}...`);
 
                         // Inject into the current message structure
                         const injection = [
@@ -701,13 +722,22 @@ const memoryLanceDBLitePlugin = {
                             ctx.content.unshift({ type: "text", text: injection });
                         }
 
+                        // Also try the 'message' field if 'content' isn't what the agent reads
+                        if (ctx.message && typeof ctx.message === "string") {
+                            ctx.message = injection + ctx.message;
+                        }
+
                         // Burn after reading
                         try {
                             await unlink(ephemeralPath);
-                            api.logger.info("ephemeral-injection: consumed and deleted handover context");
+                            api.logger.info("ephemeral-injection: successfully consumed and deleted handover context");
                         } catch (e) {
                             api.logger.warn("ephemeral-injection: failed to delete file after injection");
                         }
+                    } else if (data && data.context === "No specific temporary constraints.") {
+                        // Just delete if nothing meaningful
+                        await unlink(ephemeralPath);
+                        api.logger.debug("ephemeral-injection: nothing to inject, cleaned up file");
                     }
                 } catch (err: any) {
                     if (err.code !== "ENOENT") {
