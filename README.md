@@ -52,15 +52,15 @@ While LanceDB handles long-term facts, navigating between continuous tasks acros
 **✨ First-Turn Context Injection Command (`/save`)**
 Writing raw transcripts to a `MEMORY.md` file causes severe Context Bloat (the entire transcript gets repeated on *every single turn* of your next session, wasting thousands of tokens). 
 
-To solve this, `/save` uses **First-Turn Ephemeral Injection**:
+To solve this, `/save` uses an **LLM State Synthesizer** coupled with **First-Turn Ephemeral Injection**:
 > `/save`
 
 The gateway will intercept this command and automatically:
 1. Scan your recent messages and extract any major facts to LanceDB.
-2. **Ephemeral Wrap-up:** Capture your exact last 25 messages and place them in a temporary holding area.
+2. **Full-Session Synthesis:** Spin up an internal Summarizer LLM to scan up to 200 of your most recent messages. It extracts only your explicit constraints (e.g., "don't save this to LanceDB," temporary tracking numbers) into a hyper-condensed summary (<100 words).
 3. Tell you it's safe to type `/new`.
 
-When you start the new session and say your first message, the gateway intercepts it and **injects the holding area precisely once** into the Prompt. The agent instantly sees the exact string of recent events (including temporary passwords or active rules). As the conversation progresses, this context naturally slides out of the window, guaranteeing 100% context fidelity at exactly 0 long-term token waste.
+When you start the new session and say your first message, the gateway intercepts it and **injects the condensed summary precisely once** into the Prompt. The agent instantly understands the constraints of the previous session. As the conversation progresses, this context naturally slides out of the window, guaranteeing 100% context fidelity at exactly 0 long-term token waste.
 
 ## Testing Your Memory
 
@@ -252,6 +252,8 @@ This plugin supports any OpenAI-compatible embeddings endpoint. Example config s
 | `embedding.baseURL` | string | OpenAI | Custom API endpoint for non-OpenAI providers |
 | `embedding.model` | string | — | Embedding model name |
 | `embedding.dimensions` | number | auto | Override vector dimensions (auto-detected for known models) |
+| `summarizer.apiKey` | string | `OPENAI_API_KEY` | API key for `/save` session summarizer |
+| `summarizer.model` | string | `gpt-4o-mini` | LLM model for session summarizer |
 | `autoCapture` | boolean | `false` | Automatically capture important info from conversations |
 | `autoRecall` | boolean | `false` | Automatically search memories on each message |
 | `sessionMemory.enabled` | boolean | `false` | Enable session-level memory tracking |

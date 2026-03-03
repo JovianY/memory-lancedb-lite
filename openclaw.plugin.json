@@ -2,7 +2,7 @@
     "id": "memory-lancedb-lite",
     "name": "Memory (LanceDB Lite)",
     "description": "Streamlined LanceDB-backed long-term memory with hybrid retrieval, multi-scope isolation, and security hardening",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "kind": "memory",
     "configSchema": {
         "type": "object",
@@ -189,6 +189,23 @@
                     }
                 }
             },
+            "summarizer": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "apiKey": {
+                        "type": "string",
+                        "description": "API key for the summarizer model (defaults to OPENAI_API_KEY environment variable)"
+                    },
+                    "model": {
+                        "type": "string",
+                        "default": "gpt-4o-mini"
+                    },
+                    "baseURL": {
+                        "type": "string"
+                    }
+                }
+            },
             "scopes": {
                 "type": "object",
                 "additionalProperties": false,
@@ -262,6 +279,18 @@
         "retrieval.rerankApiKey": {
             "label": "Reranker API Key",
             "sensitive": true,
+            "advanced": true
+        },
+        "summarizer.apiKey": {
+            "label": "Summarizer API Key",
+            "sensitive": true,
+            "placeholder": "Falls back to OPENAI_API_KEY if empty",
+            "advanced": true,
+            "help": "LLM API Key used for /save session summarization"
+        },
+        "summarizer.model": {
+            "label": "Summarizer Model",
+            "placeholder": "gpt-4o-mini",
             "advanced": true
         },
         "enableManagementTools": {

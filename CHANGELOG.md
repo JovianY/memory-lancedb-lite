@@ -2,6 +2,16 @@
 
 All notable changes to `memory-lancedb-lite` will be documented in this file.
 
+## [1.1.4] - 2026-03-03
+
+### Added
+- **LLM State Synthesizer for `/save`**: Replaced the arbitrary 25-line sliding window for session handovers with a full-session LLM compression step. The `/save` command now uses OpenAI (via `OPENAI_API_KEY` or the new `summarizer.apiKey` config) to read up to 200 lines of history and extract short-term constraints (e.g. "don't save to LanceDB", temporary passwords) into a concise <100 word summary, guaranteeing 100% accurate handovers without bloated contexts.
+
+## [1.1.3] - 2026-03-03
+
+### Changed
+- **First-Turn Ephemeral Context Injection**: Replaced the persistent `MEMORY.md` file with a zero-cost "Ephemeral Handover". Context is now injected dynamically into the *very first turn* of a new session via the `message:before` hook, and immediately deleted (`ephemeral_handover.json`). This ensures the background context naturally slides out of the context window over time, eliminating the severe token bloat caused by constant `MEMORY.md` reads.
+
 ## [1.1.2] - 2026-03-03
 
 ### Changed

@@ -14,6 +14,7 @@ import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { MemoryStore } from "./store.js";
 import { createEmbedder, getVectorDimensions, resolveApiKey } from "./embedder.js";
 import { createRetriever, DEFAULT_RETRIEVAL_CONFIG } from "./retriever.js";
+import OpenAI from "openai";
 import { createScopeManager } from "./scopes.js";
 import { registerAllMemoryTools } from "./tools.js";
 import { shouldSkipRetrieval } from "./adaptive-retrieval.js";
@@ -63,6 +64,11 @@ interface PluginConfig {
     };
     enableManagementTools?: boolean;
     sessionMemory?: { enabled?: boolean; messageCount?: number };
+    summarizer?: {
+        apiKey?: string;
+        model?: string;
+        baseURL?: string;
+    };
 }
 
 // ============================================================================
@@ -509,6 +515,7 @@ const memoryLanceDBLitePlugin = {
 
                         let sessionContent: string | null = null;
                         let recentRawMessages: string[] = [];
+                        let activeSessionFilePath: string | null = null;
 
                         for (const sessionsDir of possibleSessionDirs) {
                             if (sessionContent) break;
@@ -527,6 +534,7 @@ const memoryLanceDBLitePlugin = {
                                     if (content && content.trim().length > 0) {
                                         sessionContent = content;
                                         recentRawMessages = content.split("\n");
+                                        activeSessionFilePath = filePath;
                                         api.logger.info(`save-command: found session file: ${file}`);
                                         break;
                                     }
@@ -585,10 +593,48 @@ const memoryLanceDBLitePlugin = {
                             storedCount++;
                         } catch (err) { }
 
-                        // 4. Write an Ephemeral Store instead of MEMORY.md
+                        // 4. LLM State Synthesis instead of raw windowing
+                        let ephemeralContext = recentRawMessages.slice(-25).join("\n"); // Fallback
+
+                        try {
+                            const summarizerConfig = config.summarizer || {};
+                            const apiKeyMsg = summarizerConfig.apiKey ? resolveApiKey(summarizerConfig.apiKey) : undefined;
+                            const llmApiKey = apiKeyMsg || process.env.OPENAI_API_KEY;
+
+                            if (llmApiKey) {
+                                api.logger.info("save-command: initializing LLM for full-session compression");
+                                const openai = new OpenAI({
+                                    apiKey: llmApiKey,
+                                    baseURL: summarizerConfig.baseURL,
+                                });
+
+                                // Let's grab up to 200 messages for full context synthesis
+                                const fullHistoryText = activeSessionFilePath
+                                    ? await readSessionMessages(activeSessionFilePath, 200)
+                                    : recentRawMessages.join("\n");
+
+                                const prompt = `You are a Session Handover AI.\nThe user is migrating from the current chat session to a new fresh session.\nPlease extract the following from the conversation history below:\n1. Any temporary rules, secret codewords, or constraints explicitly asked NOT to be saved to long-term database.\n2. The immediate next steps or unfinished TODOs.\nRespond STRICTLY with a concise summary (max 100 words). Do not include greetings. If there are no such items, just say "No specific temporary constraints."\n\nConversation History:\n${fullHistoryText}`;
+
+                                const completion = await openai.chat.completions.create({
+                                    model: summarizerConfig.model || "gpt-4o-mini",
+                                    messages: [{ role: "user", content: prompt }]
+                                });
+
+                                const synthesizedText = completion.choices[0]?.message?.content?.trim();
+                                if (synthesizedText) {
+                                    ephemeralContext = synthesizedText;
+                                    api.logger.info("save-command: successfully compressed 200 lines to " + ephemeralContext.length + " chars");
+                                }
+                            } else {
+                                api.logger.warn("save-command: no summarizer API key or OPENAI_API_KEY found. Falling back to 25-line dumb slice.");
+                            }
+                        } catch (llmErr) {
+                            api.logger.error(`save-command: LLM synthesis failed, using fallback: ${String(llmErr)}`);
+                        }
+
                         const ephemeralData = {
                             date: `${dateStr} ${timeStr}`,
-                            context: recentRawMessages.slice(-25).join("\n") // keep up to 25 latest statements
+                            context: ephemeralContext
                         };
 
                         try {
@@ -633,8 +679,9 @@ const memoryLanceDBLitePlugin = {
                         // The user message gets prefixed with the previous context
                         const injection = [
                             `\n<previous-session-handoff date="${data.date}">`,
-                            `The user has explicitly carried over the following exact conversation from the very end of their previous session.`,
-                            `Read it to maintain continuity. Pay special attention to temporary passwords, secret codewords, or active TODOs.`,
+                            `The user has explicitly carried over the following distilled context from their previous session.`,
+                            `Read it to maintain continuity. It contains temporary passwords, secret codewords, or active TODOs.`,
+                            `THIS IS TEMPORARY STATE. Follow it strictly for this session.`,
                             `---\n${data.context}\n---`,
                             `</previous-session-handoff>\n`
                         ].join("\n");
