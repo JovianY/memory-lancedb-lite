@@ -720,12 +720,6 @@ const memoryLanceDBLitePlugin = {
                             `</previous-session-handoff>\n`
                         ].join("\n");
 
-                        if (typeof event.message === "string") {
-                            event.message = injection + event.message;
-                        } else if (Array.isArray(event.message)) {
-                            event.message.unshift({ type: "text", text: injection });
-                        }
-
                         // Burn after reading
                         try {
                             await unlink(ephemeralPath);
@@ -733,6 +727,9 @@ const memoryLanceDBLitePlugin = {
                         } catch (e) {
                             api.logger.warn("ephemeral-injection: failed to delete file after injection");
                         }
+
+                        // Return payload to SDK to append to user message
+                        return { appendContext: injection };
                     } else if (data && data.context === "No specific temporary constraints.") {
                         // Just delete if nothing meaningful
                         await unlink(ephemeralPath);
