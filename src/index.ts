@@ -548,6 +548,7 @@ const memoryLanceDBLitePlugin = {
                                         recentRawMessages = content.split("\n");
                                         activeSessionFilePath = filePath;
                                         api.logger.info(`save-command: found session file: ${file}`);
+                                        api.logger.debug(`save-command: sessionContent preview: ${sessionContent.substring(0, 150)}...`);
                                         break;
                                     }
                                 }
@@ -652,12 +653,16 @@ const memoryLanceDBLitePlugin = {
                                     "---"
                                 ].join("\n");
 
+                                api.logger.debug(`save-command: Sending prompt to LLM: ${prompt}`);
+
                                 const completion = await openai.chat.completions.create({
                                     model: summarizerConfig.model || "gpt-4o-mini",
                                     messages: [{ role: "user", content: prompt }]
                                 });
 
                                 const synthesizedText = completion.choices[0]?.message?.content?.trim();
+                                api.logger.debug(`save-command: LLM returned synthesizedText: ${synthesizedText}`);
+
                                 if (synthesizedText) {
                                     ephemeralContext = synthesizedText;
                                     api.logger.info("save-command: successfully compressed session to " + ephemeralContext.length + " chars");
@@ -676,6 +681,7 @@ const memoryLanceDBLitePlugin = {
 
                         try {
                             const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
+                            api.logger.debug(`save-command: writing ephemeral data: ${JSON.stringify(ephemeralData)}`);
                             await writeFile(ephemeralPath, JSON.stringify(ephemeralData), "utf-8");
                             api.logger.info(`save-command: prepared ephemeral handover context`);
                         } catch (err) {
@@ -728,6 +734,7 @@ const memoryLanceDBLitePlugin = {
                             api.logger.warn("ephemeral-injection: failed to delete file after injection");
                         }
 
+                        api.logger.debug(`ephemeral-injection: Returning payload to SDK: ${JSON.stringify({ appendContext: injection })}`);
                         // Return payload to SDK to append to user message
                         return { appendContext: injection };
                     } else if (data && data.context === "No specific temporary constraints.") {
