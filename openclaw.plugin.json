@@ -2,7 +2,7 @@
     "id": "memory-lancedb-lite",
     "name": "Memory (LanceDB Lite)",
     "description": "Streamlined LanceDB-backed long-term memory with hybrid retrieval, multi-scope isolation, and security hardening",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "kind": "memory",
     "configSchema": {
         "type": "object",
