@@ -500,24 +500,40 @@ const memoryLanceDBLitePlugin = {
 
                         // 1. Find and read current session messages
                         const workspaceDir = resolve(OPENCLAW_DIR, "workspace");
-                        const sessionsDir = join(workspaceDir, "sessions");
+                        const agentsDir = resolve(OPENCLAW_DIR, "agents");
+
+                        // Sessions are stored in ~/.openclaw/agents/<agentId>/sessions/
+                        const possibleSessionDirs = [
+                            join(agentsDir, "main", "sessions"),
+                            join(workspaceDir, "sessions"),
+                        ];
+
                         let sessionContent: string | null = null;
 
-                        try {
-                            const sessionFiles = await readdir(sessionsDir);
-                            const jsonlFiles = sessionFiles
-                                .filter(f => f.endsWith(".jsonl") && !f.includes(".reset."))
-                                .sort()
-                                .reverse();
+                        for (const sessionsDir of possibleSessionDirs) {
+                            if (sessionContent) break;
+                            try {
+                                if (!isPathSafe(sessionsDir)) continue;
+                                const sessionFiles = await readdir(sessionsDir);
+                                // Find active .jsonl files (not reset/deleted), sort by name descending for most recent
+                                const jsonlFiles = sessionFiles
+                                    .filter(f => f.endsWith(".jsonl") && !f.includes(".reset.") && !f.includes(".deleted."))
+                                    .sort()
+                                    .reverse();
 
-                            if (jsonlFiles.length > 0) {
-                                const latestSession = join(sessionsDir, jsonlFiles[0]);
-                                if (isPathSafe(latestSession)) {
-                                    sessionContent = await readSessionMessages(latestSession, sessionMessageCount);
+                                for (const file of jsonlFiles.slice(0, 3)) {
+                                    const filePath = join(sessionsDir, file);
+                                    if (!isPathSafe(filePath)) continue;
+                                    const content = await readSessionMessages(filePath, sessionMessageCount);
+                                    if (content && content.trim().length > 0) {
+                                        sessionContent = content;
+                                        api.logger.info(`save-command: found session file: ${file}`);
+                                        break;
+                                    }
                                 }
+                            } catch {
+                                api.logger.debug(`save-command: could not read sessions dir: ${sessionsDir}`);
                             }
-                        } catch {
-                            api.logger.debug("save-command: could not read sessions dir");
                         }
 
                         if (!sessionContent) {
