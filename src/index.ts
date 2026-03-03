@@ -734,9 +734,9 @@ const memoryLanceDBLitePlugin = {
                             api.logger.warn("ephemeral-injection: failed to delete file after injection");
                         }
 
-                        api.logger.debug(`ephemeral-injection: Returning payload to SDK: ${JSON.stringify({ appendContext: injection })}`);
-                        // Return payload to SDK to append to user message
-                        return { appendContext: injection };
+                        api.logger.debug(`ephemeral-injection: Returning payload to SDK: ${JSON.stringify({ prependContext: injection })}`);
+                        // Return payload to SDK to prepend to user message system prompt area
+                        return { prependContext: injection };
                     } else if (data && data.context === "No specific temporary constraints.") {
                         // Just delete if nothing meaningful
                         await unlink(ephemeralPath);
