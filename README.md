@@ -44,16 +44,21 @@ If `autoCapture` and `autoRecall` are enabled, the plugin works behind the scene
 You can also have the agent manually store (`memory_store`) or retrieve (`memory_recall`) information when specifically instructed.
 
 ## Best Practice: Hybrid Workflow
-While LanceDB handles long-term facts, navigating between continuous tasks across days works best when combined with a lightweight "State Machine" or "Scratchpad" approach (like a minimal `MEMORY.md` skill, e.g., `memory-manager`).
+While LanceDB handles long-term facts, navigating between continuous tasks across days works best when combined with a lightweight "State Machine" or "Scratchpad" approach.
 
 1. **The Notebook (Long-Term Vector DB)**: Rely on `memory-lancedb-lite` for persisting facts and rules. (e.g., auto-capture or manual `memory_store`).
 2. **The Sticky Note (Short-Term State Machine)**: Use a `MEMORY.md` file (kept under 500 words) for active context: *"Currently debugging login.js"*.
 
-**✨ The Handover Command (`/save+new`)**
-If you use a custom skill like `memory-manager`, you can set up a handover command. When ending your workday, simply type:
-> `/save+new` (or `/wrapup`)
+**✨ The Built-in Handover Command (`/save`)**
+This plugin comes with a built-in slash command to manage this workflow automatically. When ending your workday, simply type:
+> `/save`
 
-The agent will automatically store important new facts to LanceDB, update your `MEMORY.md` progress, and tell you it's safe to type `/new` to close the session.
+The gateway will intercept this command and automatically:
+1. Extract important new facts from the current session and store them to LanceDB.
+2. Generate a status report and TODO list, and write it to `MEMORY.md`.
+3. Inform you that it is safe to type `/new` to close the session.
+
+*(Note: The plugin includes a companion skill instructions file in `skills/memory-lancedb-lite/SKILL.md` that teaches the agent how to use this 3-tier memory system).*
 
 ## Testing Your Memory
 
