@@ -603,10 +603,12 @@ const memoryLanceDBLitePlugin = {
 
                             // Allow Gateway proxy mode: if baseURL is set, we can use a dummy key
                             // because OpenClaw Gateway handles auth via loopback exemption
-                            const effectiveApiKey = llmApiKey || (summarizerConfig.baseURL ? "openclaw-gateway-proxy" : undefined);
+                            // CRITICAL FIX: Gateway requires OPENCLAW_GATEWAY_TOKEN for auth
+                            const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+                            const effectiveApiKey = llmApiKey || (summarizerConfig.baseURL ? (gatewayToken || "openclaw-gateway-proxy") : undefined);
 
                             if (effectiveApiKey) {
-                                api.logger.info(`save-command: initializing LLM for full-session compression (baseURL: ${summarizerConfig.baseURL || "default"})`);
+                                api.logger.info(`save-command: initializing LLM for full-session compression (baseURL: ${summarizerConfig.baseURL || "default"}, usingGatewayToken: ${!!gatewayToken})`);
                                 const openai = new OpenAI({
                                     apiKey: effectiveApiKey,
                                     baseURL: summarizerConfig.baseURL,
@@ -670,9 +672,10 @@ const memoryLanceDBLitePlugin = {
             // Ephemeral Context Injection Hook
             // ================================================================
 
-            api.on("message", async (event: any) => {
-                if (event.action !== "received") return;
+            // Use api.on for standard events. For message injection, we use "message:received" event.
+            api.on("message:received", async (event: any) => {
                 const ctx = event.context;
+                api.logger.debug(`ephemeral-injection: check (action: ${event.action}, from: ${ctx?.from})`);
 
                 const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
                 try {
@@ -680,7 +683,7 @@ const memoryLanceDBLitePlugin = {
                     const data = JSON.parse(content);
 
                     if (data && data.context) {
-                        api.logger.info("ephemeral-injection: injecting handover context into first turn");
+                        api.logger.info(`ephemeral-injection: found handover file from ${data.date}. content length: ${data.context.length}`);
 
                         // Inject into the current message structure
                         const injection = [
