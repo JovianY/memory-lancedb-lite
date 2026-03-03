@@ -687,16 +687,8 @@ const memoryLanceDBLitePlugin = {
 
             api.logger.info("save-command: /save command registered");
 
-            // ================================================================
-            // Ephemeral Context Injection Hook
-            // ================================================================
-
-            api.on("message", async (event: any) => {
-                if (event.action !== "received" && event.action !== "received:before" && event.action !== "before_received") {
-                    return;
-                }
-                const ctx = event.context;
-                api.logger.debug(`ephemeral-injection: message event triggered (action: ${event.action})`);
+            api.on("before_agent_start", async (event: any) => {
+                api.logger.debug(`ephemeral-injection: before_agent_start event triggered (session: ${event.sessionId})`);
 
                 const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
                 try {
@@ -716,15 +708,10 @@ const memoryLanceDBLitePlugin = {
                             `</previous-session-handoff>\n`
                         ].join("\n");
 
-                        if (typeof ctx.content === "string") {
-                            ctx.content = injection + ctx.content;
-                        } else if (Array.isArray(ctx.content)) {
-                            ctx.content.unshift({ type: "text", text: injection });
-                        }
-
-                        // Also try the 'message' field if 'content' isn't what the agent reads
-                        if (ctx.message && typeof ctx.message === "string") {
-                            ctx.message = injection + ctx.message;
+                        if (typeof event.message === "string") {
+                            event.message = injection + event.message;
+                        } else if (Array.isArray(event.message)) {
+                            event.message.unshift({ type: "text", text: injection });
                         }
 
                         // Burn after reading
