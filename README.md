@@ -44,23 +44,23 @@ If `autoCapture` and `autoRecall` are enabled, the plugin works behind the scene
 You can also have the agent manually store (`memory_store`) or retrieve (`memory_recall`) information when specifically instructed.
 
 ## Best Practice: Hybrid Workflow
-While LanceDB handles long-term facts, navigating between continuous tasks across days works best when combined with a lightweight "State Machine" or "Scratchpad" approach.
+While LanceDB handles long-term facts, navigating between continuous tasks across days works best when combined with Ephemeral Context for active debugging and session continuity.
 
 1. **The Notebook (Long-Term Vector DB)**: Rely on `memory-lancedb-lite` for persisting facts and rules. (e.g., auto-capture or manual `memory_store`).
-2. **The Sticky Note (Short-Term State Machine)**: Use a `MEMORY.md` file (kept under 500 words) for active context: *"Currently debugging login.js"*.
+2. **The Whisper (First-Turn Injection)**: Use `/save` to pass short-term state safely into the next session without permanently bloating your context window.
 
-**✨ Zero-Shot Handover Command (`/save`)**
-Since LanceDB handles long-term facts, we still need a perfect mechanism to carry over short-term tasks (like a temporary password, or an active debugging line) across chat sessions without spending thousands of LLM tokens on AI-summarization.
+**✨ First-Turn Context Injection Command (`/save`)**
+Writing raw transcripts to a `MEMORY.md` file causes severe Context Bloat (the entire transcript gets repeated on *every single turn* of your next session, wasting thousands of tokens). 
 
-When ending your workday, simply type:
+To solve this, `/save` uses **First-Turn Ephemeral Injection**:
 > `/save`
 
 The gateway will intercept this command and automatically:
 1. Scan your recent messages and extract any major facts to LanceDB.
-2. **Zero-Shot Windowing:** Capture your exact last 15 messages and append them directly to `MEMORY.md` as an unedited transcript.
+2. **Ephemeral Wrap-up:** Capture your exact last 25 messages and place them in a temporary holding area.
 3. Tell you it's safe to type `/new`.
 
-When you start the new session, the Agent reads `MEMORY.md` and instantly sees the exact string of recent events. No AI token waste, 100% context fidelity.
+When you start the new session and say your first message, the gateway intercepts it and **injects the holding area precisely once** into the Prompt. The agent instantly sees the exact string of recent events (including temporary passwords or active rules). As the conversation progresses, this context naturally slides out of the window, guaranteeing 100% context fidelity at exactly 0 long-term token waste.
 
 ## Testing Your Memory
 

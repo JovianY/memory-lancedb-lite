@@ -406,7 +406,7 @@ const memoryLanceDBLitePlugin = {
         if (config.sessionMemory?.enabled === true) {
             const sessionMessageCount = config.sessionMemory?.messageCount ?? 15;
 
-            api.registerHook("command:new", async (event) => {
+            api.hooks.register("command:new", async (event: any) => {
                 try {
                     api.logger.debug("session-memory: hook triggered for /new command");
 
@@ -585,38 +585,26 @@ const memoryLanceDBLitePlugin = {
                             storedCount++;
                         } catch (err) { }
 
-                        // 4. Write perfectly intact sliding window context to MEMORY.md
-                        const memoryMdContent = [
-                            `# Session State (Auto-saved window)`,
-                            `> Last saved: ${dateStr} ${timeStr}`,
-                            `> Memories implicitly saved to LanceDB: ${storedCount}`,
-                            ``,
-                            `## 🔄 Recent Context (Preserved from Last Session)`,
-                            `> The following is an exact transcript of the final moments of the previous session.`,
-                            `> Read it to maintain continuity. Pay special attention to temporary passwords, secret codewords, or immediate user requests.`,
-                            ``,
-                            "```text",
-                            ...recentRawMessages.slice(-15),
-                            "```",
-                            ``,
-                            `## ✅ TODOs`,
-                            `- (若有任何已知待辦事項，請依照上方 Context 繼續進行)`,
-                            ``
-                        ].join("\n");
+                        // 4. Write an Ephemeral Store instead of MEMORY.md
+                        const ephemeralData = {
+                            date: `${dateStr} ${timeStr}`,
+                            context: recentRawMessages.slice(-25).join("\n") // keep up to 25 latest statements
+                        };
 
                         try {
-                            const memoryMdPath = join(workspaceDir, "MEMORY.md");
-                            await writeFile(memoryMdPath, memoryMdContent, "utf-8");
+                            const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
+                            await writeFile(ephemeralPath, JSON.stringify(ephemeralData), "utf-8");
+                            api.logger.info(`save-command: prepared ephemeral handover context`);
                         } catch (err) {
-                            api.logger.warn(`save-command: failed to write MEMORY.md: ${String(err)}`);
+                            api.logger.warn(`save-command: failed to write ephemeral context: ${String(err)}`);
                         }
 
                         const responseText = [
-                            `✅ 交接完成 (Zero-Shot Windowing)！`,
+                            `✅ 交接完成 (First-Turn Injection Ready)！`,
                             `- 自動過濾並抽取了 ${storedCount} 筆長期知識至 LanceDB`,
-                            `- 已將完整的前情提要原封不動貼到了 MEMORY.md`,
+                            `- 已將完整的前情提要封裝。`,
                             ``,
-                            `🧠 通關密語等細節皆已無損保留。請輸入 \`/new\` 開啟新回合。`
+                            `🧠 通關密語等細節皆已無損保留。請輸入 \`/new\` 開啟新回合，前情提要將在您的下一句話時自動無痕注入。`
                         ].join("\n");
 
                         return { text: responseText };
@@ -627,6 +615,51 @@ const memoryLanceDBLitePlugin = {
             });
 
             api.logger.info("save-command: /save command registered");
+
+            // ================================================================
+            // Ephemeral Context Injection Hook
+            // ================================================================
+
+            api.hooks.register("message:before", async (ctx) => {
+                const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
+                try {
+                    const content = await readFile(ephemeralPath, "utf-8");
+                    const data = JSON.parse(content);
+
+                    if (data && data.context) {
+                        api.logger.info("ephemeral-injection: injecting handover context into first turn");
+
+                        // Inject into the current message structure
+                        // The user message gets prefixed with the previous context
+                        const injection = [
+                            `\n<previous-session-handoff date="${data.date}">`,
+                            `The user has explicitly carried over the following exact conversation from the very end of their previous session.`,
+                            `Read it to maintain continuity. Pay special attention to temporary passwords, secret codewords, or active TODOs.`,
+                            `---\n${data.context}\n---`,
+                            `</previous-session-handoff>\n`
+                        ].join("\n");
+
+                        if (typeof ctx.message === "string") {
+                            ctx.message = injection + ctx.message;
+                        } else if (Array.isArray(ctx.message)) {
+                            // If it's a multimodal array, prepend a text block
+                            ctx.message.unshift({ type: "text", text: injection });
+                        }
+
+                        // Burn after reading
+                        try {
+                            const { unlink } = await import("node:fs/promises");
+                            await unlink(ephemeralPath);
+                            api.logger.info("ephemeral-injection: consumed and deleted handover context");
+                        } catch (e) {
+                            api.logger.warn("ephemeral-injection: failed to delete file after injection");
+                        }
+                    }
+                } catch {
+                    // No ephemeral handover found, completely normal
+                }
+            });
+            api.logger.info("ephemeral-injection: message:before hook registered");
 
 
         }

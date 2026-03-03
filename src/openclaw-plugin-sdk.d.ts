@@ -60,6 +60,9 @@ declare module "openclaw/plugin-sdk" {
         registerService: (service: ServiceDefinition) => void;
         registerHook: (event: string, handler: (event: any) => Promise<void>) => void;
         registerCommand: (command: CommandDefinition) => void;
+        hooks: {
+            register: (event: string, handler: (ctx: any) => Promise<any> | void) => void;
+        };
         on: (event: string, handler: (event: any, ctx?: any) => Promise<any>) => void;
     }
 
