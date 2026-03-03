@@ -412,7 +412,7 @@ const memoryLanceDBLitePlugin = {
         if (config.sessionMemory?.enabled === true) {
             const sessionMessageCount = config.sessionMemory?.messageCount ?? 15;
 
-            api.hooks.register("command:new", async (event: any) => {
+            api.registerHook("command:new", async (event: any) => {
                 try {
                     api.logger.debug("session-memory: hook triggered for /new command");
 
@@ -670,7 +670,7 @@ const memoryLanceDBLitePlugin = {
             // Ephemeral Context Injection Hook
             // ================================================================
 
-            api.hooks.register("message:before", async (ctx) => {
+            api.registerHook("message:before", async (ctx: any) => {
                 const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
                 try {
                     const content = await readFile(ephemeralPath, "utf-8");
