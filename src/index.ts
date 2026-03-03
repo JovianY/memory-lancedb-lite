@@ -253,7 +253,7 @@ async function findPreviousSessionFile(sessionsDir: string, currentSessionFile?:
 // Plugin Definition
 // ============================================================================
 
-const PLUGIN_VERSION = "1.0.0";
+const PLUGIN_VERSION = "1.1.4";
 
 const memoryLanceDBLitePlugin = {
     id: "memory-lancedb-lite",
