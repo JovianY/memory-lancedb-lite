@@ -598,13 +598,17 @@ const memoryLanceDBLitePlugin = {
 
                         try {
                             const summarizerConfig = config.summarizer || {};
-                            const apiKeyMsg = summarizerConfig.apiKey ? resolveApiKey(summarizerConfig.apiKey) : undefined;
-                            const llmApiKey = apiKeyMsg || process.env.OPENAI_API_KEY;
+                            const apiKeyRaw = summarizerConfig.apiKey ? resolveApiKey(summarizerConfig.apiKey) : undefined;
+                            const llmApiKey = apiKeyRaw || process.env.OPENAI_API_KEY;
 
-                            if (llmApiKey) {
-                                api.logger.info("save-command: initializing LLM for full-session compression");
+                            // Allow Gateway proxy mode: if baseURL is set, we can use a dummy key
+                            // because OpenClaw Gateway handles auth via loopback exemption
+                            const effectiveApiKey = llmApiKey || (summarizerConfig.baseURL ? "openclaw-gateway-proxy" : undefined);
+
+                            if (effectiveApiKey) {
+                                api.logger.info(`save-command: initializing LLM for full-session compression (baseURL: ${summarizerConfig.baseURL || "default"})`);
                                 const openai = new OpenAI({
-                                    apiKey: llmApiKey,
+                                    apiKey: effectiveApiKey,
                                     baseURL: summarizerConfig.baseURL,
                                 });
 
@@ -623,10 +627,10 @@ const memoryLanceDBLitePlugin = {
                                 const synthesizedText = completion.choices[0]?.message?.content?.trim();
                                 if (synthesizedText) {
                                     ephemeralContext = synthesizedText;
-                                    api.logger.info("save-command: successfully compressed 200 lines to " + ephemeralContext.length + " chars");
+                                    api.logger.info("save-command: successfully compressed session to " + ephemeralContext.length + " chars");
                                 }
                             } else {
-                                api.logger.warn("save-command: no summarizer API key or OPENAI_API_KEY found. Falling back to 25-line dumb slice.");
+                                api.logger.warn("save-command: no summarizer API key, OPENAI_API_KEY, or baseURL found. Falling back to 25-line dumb slice.");
                             }
                         } catch (llmErr) {
                             api.logger.error(`save-command: LLM synthesis failed, using fallback: ${String(llmErr)}`);
