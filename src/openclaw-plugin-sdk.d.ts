@@ -35,6 +35,23 @@ declare module "openclaw/plugin-sdk" {
         error: (...args: unknown[]) => void;
     }
 
+    export interface CommandContext {
+        senderId?: string;
+        channel?: string;
+        isAuthorizedSender?: boolean;
+        args?: string;
+        commandBody?: string;
+        config?: unknown;
+    }
+
+    export interface CommandDefinition {
+        name: string;
+        description: string;
+        acceptsArgs?: boolean;
+        requireAuth?: boolean;
+        handler: (ctx: CommandContext) => Promise<{ text: string }> | { text: string };
+    }
+
     export interface OpenClawPluginApi {
         pluginConfig: unknown;
         logger: Logger;
@@ -42,6 +59,7 @@ declare module "openclaw/plugin-sdk" {
         registerTool: (tool: ToolDefinition, options?: ToolRegistrationOptions) => void;
         registerService: (service: ServiceDefinition) => void;
         registerHook: (event: string, handler: (event: any) => Promise<void>) => void;
+        registerCommand: (command: CommandDefinition) => void;
         on: (event: string, handler: (event: any, ctx?: any) => Promise<any>) => void;
     }
 

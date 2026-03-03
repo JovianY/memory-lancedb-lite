@@ -9,7 +9,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { homedir } from "node:os";
 import { join, resolve, dirname, basename } from "node:path";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 
 import { MemoryStore } from "./store.js";
 import { createEmbedder, getVectorDimensions, resolveApiKey } from "./embedder.js";
@@ -484,6 +484,147 @@ const memoryLanceDBLitePlugin = {
             });
 
             api.logger.info("session-memory: hook registered for command:new");
+
+            // ================================================================
+            // /save Command — Session Handover (Memory Manager Integration)
+            // ================================================================
+
+            api.registerCommand({
+                name: "save",
+                description: "Save session knowledge to LanceDB and update MEMORY.md state",
+                acceptsArgs: false,
+                requireAuth: true,
+                handler: async (ctx) => {
+                    try {
+                        api.logger.info("save-command: /save triggered, starting handover...");
+
+                        // 1. Find and read current session messages
+                        const workspaceDir = resolve(OPENCLAW_DIR, "workspace");
+                        const sessionsDir = join(workspaceDir, "sessions");
+                        let sessionContent: string | null = null;
+
+                        try {
+                            const sessionFiles = await readdir(sessionsDir);
+                            const jsonlFiles = sessionFiles
+                                .filter(f => f.endsWith(".jsonl") && !f.includes(".reset."))
+                                .sort()
+                                .reverse();
+
+                            if (jsonlFiles.length > 0) {
+                                const latestSession = join(sessionsDir, jsonlFiles[0]);
+                                if (isPathSafe(latestSession)) {
+                                    sessionContent = await readSessionMessages(latestSession, sessionMessageCount);
+                                }
+                            }
+                        } catch {
+                            api.logger.debug("save-command: could not read sessions dir");
+                        }
+
+                        if (!sessionContent) {
+                            return { text: "⚠️ 找不到目前的 Session 記錄，無法執行交接。請確認是否有進行中的對話。" };
+                        }
+
+                        // 2. Extract valuable facts and store to LanceDB
+                        const lines = sessionContent.split("\n");
+                        const userMessages = lines
+                            .filter(l => l.startsWith("user: "))
+                            .map(l => l.slice(6));
+
+                        let storedCount = 0;
+                        const toCapture = userMessages.filter(text => text && shouldCapture(text));
+
+                        for (const text of toCapture.slice(0, 5)) {
+                            try {
+                                const category = detectCategory(text);
+                                const vector = await embedder.embedPassage(text);
+                                const existing = await store.vectorSearch(vector, 1, 0.1, ["global"]);
+                                if (existing.length > 0 && existing[0].score > 0.92) continue;
+
+                                await store.store({
+                                    text,
+                                    vector,
+                                    importance: 0.8,
+                                    category,
+                                    scope: "global",
+                                });
+                                storedCount++;
+                            } catch (err) {
+                                api.logger.warn(`save-command: failed to store memory: ${String(err)}`);
+                            }
+                        }
+
+                        // 3. Write MEMORY.md state machine
+                        const now = new Date();
+                        const dateStr = now.toISOString().split("T")[0];
+                        const timeStr = now.toTimeString().split(" ")[0];
+
+                        // Extract a concise summary from the last few messages
+                        const recentMessages = lines.slice(-10).join("\n");
+                        const summaryLines = recentMessages
+                            .split("\n")
+                            .filter(l => l.trim().length > 0)
+                            .slice(-6)
+                            .map(l => `- ${l.slice(0, 120)}`);
+
+                        const memoryMdContent = [
+                            `# Session State (Auto-saved)`,
+                            `> Last saved: ${dateStr} ${timeStr}`,
+                            `> Memories stored: ${storedCount}`,
+                            ``,
+                            `## Recent Context`,
+                            ...summaryLines,
+                            ``,
+                            `## TODOs`,
+                            `- (Agent: please review the session above and fill in pending tasks here)`,
+                            ``,
+                        ].join("\n");
+
+                        try {
+                            const memoryMdPath = join(workspaceDir, "MEMORY.md");
+                            await writeFile(memoryMdPath, memoryMdContent, "utf-8");
+                            api.logger.info(`save-command: wrote MEMORY.md (${memoryMdContent.length} bytes)`);
+                        } catch (err) {
+                            api.logger.warn(`save-command: failed to write MEMORY.md: ${String(err)}`);
+                        }
+
+                        // 4. Also store the full session summary to LanceDB
+                        try {
+                            const sessionSummary = `Session handover ${dateStr} ${timeStr}: ${recentMessages.slice(0, 500)}`;
+                            const summaryVector = await embedder.embedPassage(sessionSummary);
+                            await store.store({
+                                text: sessionSummary,
+                                vector: summaryVector,
+                                category: "fact",
+                                scope: "global",
+                                importance: 0.6,
+                                metadata: JSON.stringify({
+                                    type: "session-handover",
+                                    date: dateStr,
+                                }),
+                            });
+                            storedCount++;
+                        } catch (err) {
+                            api.logger.warn(`save-command: failed to store session summary: ${String(err)}`);
+                        }
+
+                        const responseText = [
+                            `✅ 交接完成！`,
+                            `- 已將 ${storedCount} 筆知識打入長期記憶 (LanceDB)`,
+                            `- 已更新 MEMORY.md 進度便利貼`,
+                            ``,
+                            `您可以放心輸入 /new 開啟新對話了。`,
+                        ].join("\n");
+
+                        api.logger.info(`save-command: handover complete (${storedCount} memories stored)`);
+                        return { text: responseText };
+                    } catch (err) {
+                        api.logger.error(`save-command: handover failed: ${String(err)}`);
+                        return { text: `❌ 交接失敗：${String(err)}` };
+                    }
+                },
+            });
+
+            api.logger.info("save-command: /save command registered");
         }
 
         // ========================================================================
