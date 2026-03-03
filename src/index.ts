@@ -9,7 +9,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { homedir } from "node:os";
 import { join, resolve, dirname, basename } from "node:path";
-import { readFile, readdir, writeFile, mkdir, unlink } from "node:fs/promises";
+import { readFile, readdir, writeFile, mkdir, unlink, stat } from "node:fs/promises";
 
 import { MemoryStore } from "./store.js";
 import { createEmbedder, getVectorDimensions, resolveApiKey } from "./embedder.js";
@@ -522,10 +522,22 @@ const memoryLanceDBLitePlugin = {
                             try {
                                 if (!isPathSafe(sessionsDir)) continue;
                                 const sessionFiles = await readdir(sessionsDir);
-                                const jsonlFiles = sessionFiles
-                                    .filter(f => f.endsWith(".jsonl") && !f.includes(".reset.") && !f.includes(".deleted."))
-                                    .sort()
-                                    .reverse();
+                                const fileStats = await Promise.all(
+                                    sessionFiles
+                                        .filter(f => f.endsWith(".jsonl") && !f.includes(".reset.") && !f.includes(".deleted."))
+                                        .map(async f => {
+                                            try {
+                                                const s = await stat(join(sessionsDir, f));
+                                                return { name: f, time: s.mtimeMs };
+                                            } catch {
+                                                return { name: f, time: 0 };
+                                            }
+                                        })
+                                );
+
+                                const jsonlFiles = fileStats
+                                    .sort((a, b) => b.time - a.time)
+                                    .map(x => x.name);
 
                                 for (const file of jsonlFiles.slice(0, 3)) {
                                     const filePath = join(sessionsDir, file);
