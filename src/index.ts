@@ -9,7 +9,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { homedir } from "node:os";
 import { join, resolve, dirname, basename } from "node:path";
-import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
+import { readFile, readdir, writeFile, mkdir, unlink } from "node:fs/promises";
 
 import { MemoryStore } from "./store.js";
 import { createEmbedder, getVectorDimensions, resolveApiKey } from "./embedder.js";
@@ -412,7 +412,7 @@ const memoryLanceDBLitePlugin = {
         if (config.sessionMemory?.enabled === true) {
             const sessionMessageCount = config.sessionMemory?.messageCount ?? 15;
 
-            api.registerHook("command:new", async (event: any) => {
+            api.on("command:new", async (event: any) => {
                 try {
                     api.logger.debug("session-memory: hook triggered for /new command");
 
@@ -670,7 +670,10 @@ const memoryLanceDBLitePlugin = {
             // Ephemeral Context Injection Hook
             // ================================================================
 
-            api.registerHook("message:before", async (ctx: any) => {
+            api.on("message", async (event: any) => {
+                if (event.action !== "received") return;
+                const ctx = event.context;
+
                 const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
                 try {
                     const content = await readFile(ephemeralPath, "utf-8");
@@ -680,7 +683,6 @@ const memoryLanceDBLitePlugin = {
                         api.logger.info("ephemeral-injection: injecting handover context into first turn");
 
                         // Inject into the current message structure
-                        // The user message gets prefixed with the previous context
                         const injection = [
                             `\n<previous-session-handoff date="${data.date}">`,
                             `The user has explicitly carried over the following distilled context from their previous session.`,
@@ -690,27 +692,27 @@ const memoryLanceDBLitePlugin = {
                             `</previous-session-handoff>\n`
                         ].join("\n");
 
-                        if (typeof ctx.message === "string") {
-                            ctx.message = injection + ctx.message;
-                        } else if (Array.isArray(ctx.message)) {
-                            // If it's a multimodal array, prepend a text block
-                            ctx.message.unshift({ type: "text", text: injection });
+                        if (typeof ctx.content === "string") {
+                            ctx.content = injection + ctx.content;
+                        } else if (Array.isArray(ctx.content)) {
+                            ctx.content.unshift({ type: "text", text: injection });
                         }
 
                         // Burn after reading
                         try {
-                            const { unlink } = await import("node:fs/promises");
                             await unlink(ephemeralPath);
                             api.logger.info("ephemeral-injection: consumed and deleted handover context");
                         } catch (e) {
                             api.logger.warn("ephemeral-injection: failed to delete file after injection");
                         }
                     }
-                } catch {
-                    // No ephemeral handover found, completely normal
+                } catch (err: any) {
+                    if (err.code !== "ENOENT") {
+                        api.logger.error(`ephemeral-injection: failed: ${String(err)}`);
+                    }
                 }
             });
-            api.logger.info("ephemeral-injection: message:before hook registered");
+            api.logger.info("ephemeral-injection: message handler registered");
 
 
         }
@@ -815,6 +817,13 @@ function parsePluginConfig(value: unknown): PluginConfig {
                 messageCount: typeof (cfg.sessionMemory as Record<string, unknown>).messageCount === "number"
                     ? (cfg.sessionMemory as Record<string, unknown>).messageCount as number
                     : undefined,
+            }
+            : undefined,
+        summarizer: typeof cfg.summarizer === "object" && cfg.summarizer !== null
+            ? {
+                apiKey: typeof (cfg.summarizer as any).apiKey === "string" ? resolveApiKey((cfg.summarizer as any).apiKey) : undefined,
+                model: (cfg.summarizer as any).model,
+                baseURL: (cfg.summarizer as any).baseURL,
             }
             : undefined,
     };
