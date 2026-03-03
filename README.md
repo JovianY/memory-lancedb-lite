@@ -49,16 +49,14 @@ While LanceDB handles long-term facts, navigating between continuous tasks acros
 1. **The Notebook (Long-Term Vector DB)**: Rely on `memory-lancedb-lite` for persisting facts and rules. (e.g., auto-capture or manual `memory_store`).
 2. **The Sticky Note (Short-Term State Machine)**: Use a `MEMORY.md` file (kept under 500 words) for active context: *"Currently debugging login.js"*.
 
-**✨ The Built-in Handover Command (`/save`)**
-This plugin comes with a built-in slash command to manage this workflow automatically. When ending your workday, simply type:
-> `/save`
+**✨ The Intelligent Handover (`交接` or `save+new`)**
+Since LanceDB stores long-term facts, you still want an intelligent summary of short-term tasks. Rather than a dumb textual dump, you should let the agent **read the conversation and synthesize** the `MEMORY.md` file itself!
+When ending your workday, simply type:
+> `交接`
 
-The gateway will intercept this command and automatically:
-1. Extract important new facts from the current session and store them to LanceDB.
-2. Generate a status report and TODO list, and write it to `MEMORY.md`.
-3. Inform you that it is safe to type `/new` to close the session.
+The agent (acting on the instructions provided in the bundled `skills/memory-lancedb-lite/SKILL.md`) will carefully read the recent context, identify temporary passwords, secret codewords, or active TODOs, and update `MEMORY.md` intelligently using its tools. Then it will tell you it's safe to type `/new`.
 
-*(Note: The plugin includes a companion skill instructions file in `skills/memory-lancedb-lite/SKILL.md` that teaches the agent how to use this 3-tier memory system).*
+*(Enjoy the magic of an AI-driven State Machine that doesn't just slice text, but actually comprehends your goals!)*
 
 ## Testing Your Memory
 

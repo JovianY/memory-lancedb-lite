@@ -2,6 +2,12 @@
 
 All notable changes to `memory-lancedb-lite` will be documented in this file.
 
+## [1.1.1] - 2026-03-03
+
+### Changed
+- **Removed native `/save` command**: The native gateway `/save` command (introduced in 1.1.0) bypassed the LLM, leading to poor `MEMORY.md` truncations that ignored the user's specific context requests (e.g., "don't store this in LanceDB, just remember it for later").
+- **Restored AI-driven Synthesis**: Updated `skills/memory-lancedb-lite/SKILL.md` to instruct the Agent to manually execute session handovers (generating intelligent `MEMORY.md` summaries via standard tools) when the user types `交接` or `save`.
+
 ## [1.1.0] - 2026-03-03
 
 ### Added
