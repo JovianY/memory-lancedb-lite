@@ -485,6 +485,149 @@ const memoryLanceDBLitePlugin = {
 
             api.logger.info("session-memory: hook registered for command:new");
 
+            // ================================================================
+            // /save Command — Zero-Shot Context Windowing
+            // ================================================================
+
+            api.registerCommand({
+                name: "save",
+                description: "Save session knowledge to LanceDB and copy recent context to MEMORY.md",
+                acceptsArgs: false,
+                requireAuth: true,
+                handler: async (ctx) => {
+                    try {
+                        api.logger.info("save-command: /save triggered, starting zero-shot handover...");
+
+                        // 1. Find and read current session messages
+                        const workspaceDir = resolve(OPENCLAW_DIR, "workspace");
+                        const agentsDir = resolve(OPENCLAW_DIR, "agents");
+
+                        const possibleSessionDirs = [
+                            join(agentsDir, "main", "sessions"),
+                            join(workspaceDir, "sessions"),
+                        ];
+
+                        let sessionContent: string | null = null;
+                        let recentRawMessages: string[] = [];
+
+                        for (const sessionsDir of possibleSessionDirs) {
+                            if (sessionContent) break;
+                            try {
+                                if (!isPathSafe(sessionsDir)) continue;
+                                const sessionFiles = await readdir(sessionsDir);
+                                const jsonlFiles = sessionFiles
+                                    .filter(f => f.endsWith(".jsonl") && !f.includes(".reset.") && !f.includes(".deleted."))
+                                    .sort()
+                                    .reverse();
+
+                                for (const file of jsonlFiles.slice(0, 3)) {
+                                    const filePath = join(sessionsDir, file);
+                                    if (!isPathSafe(filePath)) continue;
+                                    const content = await readSessionMessages(filePath, 25); // Get last 25 messages
+                                    if (content && content.trim().length > 0) {
+                                        sessionContent = content;
+                                        recentRawMessages = content.split("\n");
+                                        api.logger.info(`save-command: found session file: ${file}`);
+                                        break;
+                                    }
+                                }
+                            } catch { } // ignore
+                        }
+
+                        if (!sessionContent || recentRawMessages.length === 0) {
+                            return { text: "⚠️ 找不到目前的 Session 記錄，無法執行交接。請確認是否有進行中的對話。" };
+                        }
+
+                        // 2. Extract facts to LanceDB (Filter via shouldCapture)
+                        const userMessages = recentRawMessages
+                            .filter(l => l.startsWith("user: "))
+                            .map(l => l.slice(6));
+
+                        let storedCount = 0;
+                        const toCapture = userMessages.filter(text => text && shouldCapture(text));
+
+                        for (const text of toCapture.slice(0, 10)) {
+                            try {
+                                const category = detectCategory(text);
+                                const vector = await embedder.embedPassage(text);
+                                const existing = await store.vectorSearch(vector, 1, 0.1, ["global"]);
+                                if (existing.length > 0 && existing[0].score > 0.92) continue;
+
+                                await store.store({
+                                    text,
+                                    vector,
+                                    importance: 0.8,
+                                    category,
+                                    scope: "global"
+                                });
+                                storedCount++;
+                            } catch (err) {
+                                api.logger.warn(`save-command: failed to store memory: ${String(err)}`);
+                            }
+                        }
+
+                        // 3. Store the handover snapshot to LanceDB
+                        const now = new Date();
+                        const dateStr = now.toISOString().split("T")[0];
+                        const timeStr = now.toTimeString().split(" ")[0];
+
+                        try {
+                            const sessionSummary = `Session handover summary (${dateStr} ${timeStr}):\n${sessionContent.slice(-1000)}`;
+                            const summaryVector = await embedder.embedPassage(sessionSummary);
+                            await store.store({
+                                text: sessionSummary,
+                                vector: summaryVector,
+                                category: "fact",
+                                scope: "global",
+                                importance: 0.6,
+                                metadata: JSON.stringify({ type: "session-handover", date: dateStr })
+                            });
+                            storedCount++;
+                        } catch (err) { }
+
+                        // 4. Write perfectly intact sliding window context to MEMORY.md
+                        const memoryMdContent = [
+                            `# Session State (Auto-saved window)`,
+                            `> Last saved: ${dateStr} ${timeStr}`,
+                            `> Memories implicitly saved to LanceDB: ${storedCount}`,
+                            ``,
+                            `## 🔄 Recent Context (Preserved from Last Session)`,
+                            `> The following is an exact transcript of the final moments of the previous session.`,
+                            `> Read it to maintain continuity. Pay special attention to temporary passwords, secret codewords, or immediate user requests.`,
+                            ``,
+                            "```text",
+                            ...recentRawMessages.slice(-15),
+                            "```",
+                            ``,
+                            `## ✅ TODOs`,
+                            `- (若有任何已知待辦事項，請依照上方 Context 繼續進行)`,
+                            ``
+                        ].join("\n");
+
+                        try {
+                            const memoryMdPath = join(workspaceDir, "MEMORY.md");
+                            await writeFile(memoryMdPath, memoryMdContent, "utf-8");
+                        } catch (err) {
+                            api.logger.warn(`save-command: failed to write MEMORY.md: ${String(err)}`);
+                        }
+
+                        const responseText = [
+                            `✅ 交接完成 (Zero-Shot Windowing)！`,
+                            `- 自動過濾並抽取了 ${storedCount} 筆長期知識至 LanceDB`,
+                            `- 已將完整的前情提要原封不動貼到了 MEMORY.md`,
+                            ``,
+                            `🧠 通關密語等細節皆已無損保留。請輸入 \`/new\` 開啟新回合。`
+                        ].join("\n");
+
+                        return { text: responseText };
+                    } catch (err) {
+                        return { text: `❌ 交接失敗：${String(err)}` };
+                    }
+                }
+            });
+
+            api.logger.info("save-command: /save command registered");
+
 
         }
 

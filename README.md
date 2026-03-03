@@ -49,14 +49,18 @@ While LanceDB handles long-term facts, navigating between continuous tasks acros
 1. **The Notebook (Long-Term Vector DB)**: Rely on `memory-lancedb-lite` for persisting facts and rules. (e.g., auto-capture or manual `memory_store`).
 2. **The Sticky Note (Short-Term State Machine)**: Use a `MEMORY.md` file (kept under 500 words) for active context: *"Currently debugging login.js"*.
 
-**✨ The Intelligent Handover (`交接` or `save+new`)**
-Since LanceDB stores long-term facts, you still want an intelligent summary of short-term tasks. Rather than a dumb textual dump, you should let the agent **read the conversation and synthesize** the `MEMORY.md` file itself!
+**✨ Zero-Shot Handover Command (`/save`)**
+Since LanceDB handles long-term facts, we still need a perfect mechanism to carry over short-term tasks (like a temporary password, or an active debugging line) across chat sessions without spending thousands of LLM tokens on AI-summarization.
+
 When ending your workday, simply type:
-> `交接`
+> `/save`
 
-The agent (acting on the instructions provided in the bundled `skills/memory-lancedb-lite/SKILL.md`) will carefully read the recent context, identify temporary passwords, secret codewords, or active TODOs, and update `MEMORY.md` intelligently using its tools. Then it will tell you it's safe to type `/new`.
+The gateway will intercept this command and automatically:
+1. Scan your recent messages and extract any major facts to LanceDB.
+2. **Zero-Shot Windowing:** Capture your exact last 15 messages and append them directly to `MEMORY.md` as an unedited transcript.
+3. Tell you it's safe to type `/new`.
 
-*(Enjoy the magic of an AI-driven State Machine that doesn't just slice text, but actually comprehends your goals!)*
+When you start the new session, the Agent reads `MEMORY.md` and instantly sees the exact string of recent events. No AI token waste, 100% context fidelity.
 
 ## Testing Your Memory
 

@@ -2,6 +2,11 @@
 
 All notable changes to `memory-lancedb-lite` will be documented in this file.
 
+## [1.1.2] - 2026-03-03
+
+### Changed
+- **Zero-Shot Context Windowing for `/save`**: Reintroduced the native `/save` command with a massive efficiency improvement. Instead of an AI reading and extracting context (which costs thousands of tokens) or dumb truncation (which loses information like passwords/codewords), the `/save` command now perfectly captures the last 15 exact messages and injects them into `MEMORY.md` as an unedited transcript. This guarantees 100% immediate context retention for the next session at 0 LLM token cost.
+
 ## [1.1.1] - 2026-03-03
 
 ### Changed
