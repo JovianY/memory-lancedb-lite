@@ -55,10 +55,10 @@ Writing raw transcripts to a `MEMORY.md` file causes severe Context Bloat (the e
 To solve this, `/save` uses an **LLM State Synthesizer** coupled with **First-Turn Ephemeral Injection**:
 > `/save`
 
-The gateway will intercept this command and automatically:
-1. Scan your recent messages and extract any major facts to LanceDB.
-2. **Full-Session Synthesis:** Spin up an internal Summarizer LLM to scan up to 200 of your most recent messages. It extracts only your explicit constraints (e.g., "don't save this to LanceDB," temporary tracking numbers) into a hyper-condensed summary (<100 words).
-3. Tell you it's safe to type `/new`.
+The gateway will intercept this command and carefully execute a **State Fragment Extraction**:
+1. **Targeted Session Lock:** It identifies the exact session channel you are currently chatting in.
+2. **Full-Session Synthesis:** It spins up an internal Summarizer LLM to scan all messages in the session log. It explicitly instructs the model to compress the history into a "State Fragment", preserving your identity, pending plans, and conversational constraints.
+3. It replies with a success message (e.g., "交接儲存成功！" / "Handover saved!"), letting you know it's safe to switch to a new chat interface.
 
 When you start the new session and say your first message, the gateway intercepts it and **injects the condensed summary precisely once** into the Prompt. The agent instantly understands the constraints of the previous session. As the conversation progresses, this context naturally slides out of the window, guaranteeing 100% context fidelity at exactly 0 long-term token waste.
 
