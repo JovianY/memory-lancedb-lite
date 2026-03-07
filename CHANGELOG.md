@@ -2,6 +2,20 @@
 
 All notable changes to `memory-lancedb-lite` will be documented in this file.
 
+## [1.1.5] - 2026-03-07
+
+### Added
+- **Handover Preview**: The `/save` command now displays a 60-character preview of the saved state fragment, providing immediate confirmation of what the Agent "remembered".
+
+### Fixed
+- **Multi-Agent Awareness**: Resolved a critical bug where `/save` was hardcoded to the `main` agent's directory. It now dynamically resolves the correct `sessions/` path for `coder`, `planner`, or any custom agent.
+- **Session File Filtering**: Implemented strict exclusion rules for session scanning. The plugin now ignores `test*`, `.tmp`, `.deleted`, and `.reset` files to prevent test data or corrupted logs from contaminating real summaries.
+- **Anti-Echo Logic**: Added a pre-processing step to strip `<previous-session-handoff>` tags from the log before summarization, preventing recursive "memory echoes" where old summaries were summarized again.
+
+### Improved
+- **Smart State Merging**: Overhauled the summarization prompt to explicitly merge the "Previous State" with "New Messages". This ensures continuity of plans and constraints while allowing the LLM to prune facts already stored in LanceDB.
+- **Recency Tuning**: Adjusted hybrid retrieval weights (`recencyHalfLifeDays: 7`, `recencyWeight: 0.20`) to prioritize recent context more aggressively.
+
 ## [1.1.4] - 2026-03-03
 
 ### Added
