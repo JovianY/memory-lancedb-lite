@@ -261,7 +261,7 @@ export const memoryLanceDBLitePlugin = {
                         if (!targetFileName) {
                             const files = await readdir(sessionsDir);
                             const sortedFiles = (await Promise.all(
-                                files.filter(f => f.endsWith(".jsonl") && !f.startsWith("test-") && !f.includes("sessions.json") && !f.includes(".deleted.") && !f.includes(".reset.")).map(async f => {
+                                files.filter(f => f.endsWith(".jsonl") && !f.startsWith("test") && !f.includes("sessions.json") && !f.includes(".deleted.") && !f.includes(".reset.")).map(async f => {
                                     try {
                                         return { name: f, mtime: (await stat(join(sessionsDir, f))).mtimeMs };
                                     } catch (e) { return null; }
