@@ -346,7 +346,8 @@ export const memoryLanceDBLitePlugin = {
                         }));
 
                         api.logger.info("save-command: successfully saved ephemeral handover");
-                        return { text: "✅ 交接儲存成功！下一對話將自動載入此語境。" };
+                        const preview = summary.length > 60 ? summary.slice(0, 60).replace(/\n/g, " ") + "..." : summary.replace(/\n/g, " ");
+                        return { text: `✅ 交接儲存成功！\n\n**存檔摘要：**\n> ${preview}\n\n下一對話將自動載入此語境。` };
                     } catch (err) {
                         api.logger.error(`save-command failed: ${String(err)}`);
                         return { text: `❌ 交接失敗：${String(err)}` };
