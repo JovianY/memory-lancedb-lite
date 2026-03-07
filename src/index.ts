@@ -236,7 +236,8 @@ export const memoryLanceDBLitePlugin = {
                 handler: async (args: any, context: any) => {
                     api.logger.info("save-command: /save triggered, starting handover...");
                     try {
-                        const sessionsDir = join(OPENCLAW_DIR, "agents", "main", "sessions");
+                        const agentId = context?.agentId || "main";
+                        const sessionsDir = join(OPENCLAW_DIR, "agents", agentId, "sessions");
                         let targetFileName: string | undefined;
                         let sessionId = context?.sessionId || context?.state?.sessionId;
 
@@ -259,9 +260,9 @@ export const memoryLanceDBLitePlugin = {
                         }
 
                         if (!targetFileName) {
-                            const files = await readdir(sessionsDir);
+                            const files = await readdir(sessionsDir).catch(() => []);
                             const sortedFiles = (await Promise.all(
-                                files.filter(f => f.endsWith(".jsonl") && !f.startsWith("test") && !f.includes("sessions.json") && !f.includes(".deleted.") && !f.includes(".reset.")).map(async f => {
+                                files.filter(f => f.endsWith(".jsonl") && !f.startsWith("test") && !f.includes("sessions.json") && !f.includes(".deleted.") && !f.includes(".reset.") && !f.includes(".tmp")).map(async f => {
                                     try {
                                         return { name: f, mtime: (await stat(join(sessionsDir, f))).mtimeMs };
                                     } catch (e) { return null; }
@@ -272,7 +273,7 @@ export const memoryLanceDBLitePlugin = {
                             if (sortedFiles.length > 0) targetFileName = sortedFiles[0].name;
                         }
 
-                        if (!targetFileName) throw new Error("No session files found");
+                        if (!targetFileName) throw new Error(`No session files found for agent: ${agentId}`);
 
                         const filePath = join(sessionsDir, targetFileName);
                         const content = await readFile(filePath, "utf-8");
