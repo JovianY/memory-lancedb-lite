@@ -201,12 +201,18 @@ function cosineSimilarity(a: number[], b: number[]): number {
 // ============================================================================
 
 export class MemoryRetriever {
+    private readonly logger?: {
+        warn: (...args: unknown[]) => void;
+    };
+
     constructor(
         private store: MemoryStore,
         private embedder: Embedder,
-        private config: RetrievalConfig = DEFAULT_RETRIEVAL_CONFIG
+        private config: RetrievalConfig = DEFAULT_RETRIEVAL_CONFIG,
+        logger?: { warn: (...args: unknown[]) => void },
     ) {
         this.config = normalizeRetrievalConfig(this.config);
+        this.logger = logger;
     }
 
     async retrieve(context: RetrievalContext): Promise<RetrievalResult[]> {
@@ -390,17 +396,17 @@ export class MemoryRetriever {
 
                         return [...reranked, ...unreturned].sort((a, b) => b.score - a.score);
                     } else {
-                        console.warn("Rerank API: invalid response shape, falling back to cosine");
+                        this.logger?.warn("Rerank API: invalid response shape, falling back to cosine");
                     }
                 } else {
                     const errText = await response.text().catch(() => "");
-                    console.warn(`Rerank API returned ${response.status}: ${errText.slice(0, 200)}, falling back to cosine`);
+                    this.logger?.warn(`Rerank API returned ${response.status}: ${errText.slice(0, 200)}, falling back to cosine`);
                 }
             } catch (error) {
                 if (error instanceof Error && error.name === "AbortError") {
-                    console.warn("Rerank API timed out (5s), falling back to cosine");
+                    this.logger?.warn("Rerank API timed out (5s), falling back to cosine");
                 } else {
-                    console.warn("Rerank API failed, falling back to cosine:", error);
+                    this.logger?.warn("Rerank API failed, falling back to cosine:", String(error));
                 }
             }
         }
@@ -418,7 +424,7 @@ export class MemoryRetriever {
             });
             return reranked.sort((a, b) => b.score - a.score);
         } catch (error) {
-            console.warn("Reranking failed, returning original results:", error);
+            this.logger?.warn("Reranking failed, returning original results:", String(error));
             return results;
         }
     }
@@ -532,8 +538,11 @@ export class MemoryRetriever {
 // ============================================================================
 
 export function createRetriever(
-    store: MemoryStore, embedder: Embedder, config?: Partial<RetrievalConfig>
+    store: MemoryStore,
+    embedder: Embedder,
+    config?: Partial<RetrievalConfig>,
+    logger?: { warn: (...args: unknown[]) => void },
 ): MemoryRetriever {
     const fullConfig = normalizeRetrievalConfig({ ...DEFAULT_RETRIEVAL_CONFIG, ...config });
-    return new MemoryRetriever(store, embedder, fullConfig);
+    return new MemoryRetriever(store, embedder, fullConfig, logger);
 }

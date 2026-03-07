@@ -2,6 +2,67 @@
 
 All notable changes to `memory-lancedb-lite` will be documented in this file.
 
+## [1.1.8] - 2026-03-07
+
+### Fixed
+- **Config parsing hardening**: Replaced permissive config cast with strict runtime validation in `parsePluginConfig`, including required `embedding` checks and safer defaults for optional sections.
+- **`/save` session safety**: `/save` now fails closed when session identity cannot be resolved, instead of falling back to latest session log file.
+- **Atomic handover consumption**: Switched one-time handover injection from `read + unlink` to `rename + read + cleanup` flow to reduce duplicate injection risk under concurrent prompt builds.
+
+### Improved
+- **Large-session handling for `/save`**: Handover summarization now reads a bounded tail window of session logs (`readTailUtf8`) instead of always loading full files.
+- **Observability consistency**: Retrieval/store fallback warnings now use plugin logger instead of direct `console.warn`.
+- **Auto-capture memory pressure**: De-dup cache key now uses a fixed-length hash instead of full message text payload.
+
+### Changed
+- Updated integration and deterministic tests to reflect fail-closed `/save` semantics for malformed/missing session mapping.
+
+## [1.1.7] - 2026-03-07
+
+### Added
+- **Full Test Entry Script**: Added `scripts/test-all.sh` as a single entrypoint to run full validation suites in sequence:
+  1. `build` (`npm run build`)
+  2. deterministic regression suite (`node tests/run-tests.mjs`)
+  3. Node test compatibility suite (`node --test tests/session-handover.test.mjs tests/save-command.integration.test.mjs`)
+  4. gateway preflight + real `/save` e2e smoke (`scripts/e2e-save-smoke.sh`)
+- **Reusable npm commands for future agents**:
+  - `npm run test:all` (full suite)
+  - `npm run test:all:no-e2e` (local deterministic + compatibility only)
+  - `npm run test:all:e2e-only` (gateway smoke only)
+- **Gateway E2E Smoke Script for `/save`**: Added `scripts/e2e-save-smoke.sh` to run a real Gateway-backed end-to-end flow:
+  1. send a seeded message into an isolated test session,
+  2. run `/save`,
+  3. verify per-session handover file creation + payload shape,
+  4. send next-turn message to trigger one-time injection consumption,
+  5. verify handover file deletion,
+  6. verify chat history includes save success signal.
+  - Added per-call timeout (`OPENCLAW_E2E_GATEWAY_CALL_TIMEOUT_SEC`, default `20`) to prevent deadlocks when gateway CLI hangs.
+  - Added explicit retry-failure diagnostics (`method=<...> reason=<timeout|gateway_closed|uv_interface_addresses|...>`) for faster root-cause triage.
+- **Reusable command for future agents**:
+  - `npm run test:e2e:save`
+  - This command builds first, then runs the real smoke flow against the active local gateway.
+
+### Changed
+- **Test tooling robustness**: Switched automated test execution to `tests/run-tests.mjs` (single deterministic runner) to avoid Node test-runner instability in this environment while preserving full user-scenario + error-injection coverage.
+
+### Operational Notes (for future agents)
+- Preferred single entry: `npm run test:all`
+- If gateway is unavailable, run local suite only: `npm run test:all:no-e2e`
+- To validate only real gateway `/save`: `npm run test:all:e2e-only` (or `npm run test:e2e:save`)
+- The e2e script auto-cleans created handover artifacts and its synthetic session entry/files after completion.
+- `test:all` uses a soft gateway preflight to avoid false negatives from transient CLI startup instability, but real `/save` e2e remains strict and will fail on repeated gateway call timeouts/closures.
+
+## [1.1.6] - 2026-03-07
+
+### Fixed
+- **`/save` Command Context Contract**: Corrected command handler signature to use the real OpenClaw plugin command context (`handler(ctx)`), eliminating reliance on a non-existent second `context` argument.
+- **Session Target Resolution**: Added deterministic session resolution from command context + `sessions.json` mapping, with safer fallback logic and support for topic/session file suffixes.
+- **Ephemeral Handover Isolation**: Replaced single global `ephemeral_handover.json` with per-session-key handover files (hashed path), preventing cross-chat context leakage.
+
+### Improved
+- **Version Consistency**: Synchronized runtime/meta/manifest/package/docs versions to `1.1.6` for accurate diagnostics and deployment tracking.
+- **Regression Tests**: Added automated tests covering session context parsing and per-session handover path isolation.
+
 ## [1.1.5] - 2026-03-07
 
 ### Added

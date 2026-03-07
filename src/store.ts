@@ -29,6 +29,9 @@ export interface MemorySearchResult {
 export interface StoreConfig {
     dbPath: string;
     vectorDim: number;
+    logger?: {
+        warn: (...args: unknown[]) => void;
+    };
 }
 
 // ============================================================================
@@ -165,7 +168,7 @@ export class MemoryStore {
             await this.createFtsIndex(table);
             this.ftsIndexCreated = true;
         } catch (err) {
-            console.warn("Failed to create FTS index, falling back to vector-only search:", err);
+            this.config.logger?.warn("Failed to create FTS index, falling back to vector-only search:", String(err));
             this.ftsIndexCreated = false;
         }
 
@@ -339,7 +342,7 @@ export class MemoryStore {
 
             return mapped;
         } catch (err) {
-            console.warn("BM25 search failed, falling back to empty results:", err);
+            this.config.logger?.warn("BM25 search failed, falling back to empty results:", String(err));
             return [];
         }
     }

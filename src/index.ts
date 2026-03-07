@@ -5,17 +5,29 @@
  */
 
 import { homedir } from "node:os";
-import { join, resolve, dirname, basename } from "node:path";
-import { readFile, readdir, writeFile, mkdir, unlink, stat } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 
 import { MemoryStore } from "./store.js";
-import { createEmbedder, getVectorDimensions, resolveApiKey } from "./embedder.js";
-import { createRetriever, DEFAULT_RETRIEVAL_CONFIG } from "./retriever.js";
+import { createEmbedder, getVectorDimensions } from "./embedder.js";
+import { createRetriever } from "./retriever.js";
 import OpenAI from "openai";
 import { createScopeManager } from "./scopes.js";
-import { registerAllMemoryTools } from "./tools.js";
 import { shouldSkipRetrieval } from "./adaptive-retrieval.js";
 import { isNoise } from "./noise-filter.js";
+import {
+    type SaveCommandCtx,
+    type SessionStoreEntry,
+    getEphemeralHandoverPath,
+    getSessionKeyForHandoverWrite,
+    normalizeSessionKey,
+    normalizeSessionStore,
+    parseJsonOrDefaultObject,
+    readTailUtf8,
+    resolveSessionContextFromCommandCtx,
+    resolveSessionFileName,
+} from "./session-utils.js";
 
 // ============================================================================
 // Configuration Types
@@ -69,6 +81,56 @@ interface PluginConfig {
     };
 }
 
+interface PromptMessage {
+    role?: string;
+    content?: unknown;
+}
+
+interface PromptBuildEvent {
+    messages?: PromptMessage[];
+    agentId?: string;
+}
+
+interface PromptBuildContext {
+    sessionId?: string;
+    sessionKey?: string;
+}
+
+interface OpenClawLogger {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+    debug: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+}
+
+interface OpenClawApi {
+    config: {
+        plugins: {
+            entries: Record<string, { config?: unknown }>;
+        };
+        gateway?: {
+            auth?: {
+                token?: string;
+            };
+        };
+    };
+    logger: OpenClawLogger;
+    on: (
+        event: string,
+        handler: (event: PromptBuildEvent, ctx?: PromptBuildContext) => Promise<{ prependContext: string } | void> | { prependContext: string } | void
+    ) => void;
+    registerCommand: (command: {
+        name: string;
+        description: string;
+        handler: (ctx: SaveCommandCtx) => Promise<{ text: string }>;
+    }) => void;
+    registerService: (service: {
+        id: string;
+        start: () => Promise<void>;
+        stop: () => void;
+    }) => void;
+}
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -76,6 +138,9 @@ interface PluginConfig {
 function getDefaultDbPath(): string {
     return join(homedir(), ".openclaw", "memory", "lancedb-lite");
 }
+
+const SAVE_MAX_SESSION_TAIL_BYTES = 512 * 1024;
+const SAVE_MAX_SUMMARY_MESSAGES = 100;
 
 function parsePositiveInt(value: unknown): number | undefined {
     if (typeof value === "number" && Number.isFinite(value) && value > 0) {
@@ -92,9 +157,11 @@ function extractMessageText(content: unknown): string {
     if (typeof content === "string") return content.trim();
     if (Array.isArray(content)) {
         const parts = content
-            .map((part: any) => {
+            .map((part: unknown) => {
                 if (typeof part === "string") return part;
-                if (part && typeof part.text === "string") return part.text;
+                if (part && typeof part === "object" && "text" in part && typeof (part as { text?: unknown }).text === "string") {
+                    return (part as { text: string }).text;
+                }
                 return "";
             })
             .filter(Boolean);
@@ -111,15 +178,15 @@ export const memoryLanceDBLitePlugin = {
     meta: {
         id: "memory-lancedb-lite",
         name: "Memory (LanceDB Lite)",
-        version: "1.1.4",
+        version: "1.1.7",
         description: "Streamlined LanceDB-backed long-term memory",
         author: "OpenClaw Team",
         license: "MIT",
     },
-    register: (api: any) => {
-        api.logger.info("memory-lancedb-lite: loaded (v1.1.4)");
+    register: async (api: OpenClawApi) => {
+        api.logger.info("memory-lancedb-lite: loaded (v1.1.7)");
         const OPENCLAW_DIR = join(homedir(), ".openclaw");
-        const config = parsePluginConfig(api.config.plugins.entries["memory-lancedb-lite"].config);
+        const config = parsePluginConfig(api.config.plugins.entries["memory-lancedb-lite"]?.config);
 
         const dbPath = config.dbPath || getDefaultDbPath();
         const embeddingConfig = {
@@ -128,13 +195,14 @@ export const memoryLanceDBLitePlugin = {
         };
         const embedder = createEmbedder(embeddingConfig);
         const dims = getVectorDimensions(embeddingConfig.model, embeddingConfig.dimensions);
-        const store = new MemoryStore({ dbPath, vectorDim: dims });
-        const retriever = createRetriever(store, embedder, config.retrieval);
+        const store = new MemoryStore({ dbPath, vectorDim: dims, logger: api.logger });
+        const retriever = createRetriever(store, embedder, config.retrieval, api.logger);
         const scopeManager = createScopeManager(config.scopes);
         const recentlyCaptured = new Map<string, number>();
 
         if (config.enableManagementTools) {
-            registerAllMemoryTools(api, {
+            const { registerAllMemoryTools } = await import("./tools.js");
+            registerAllMemoryTools(api as any, {
                 retriever, store, scopeManager, embedder,
             }, { enableManagementTools: true });
         }
@@ -143,7 +211,7 @@ export const memoryLanceDBLitePlugin = {
         if (config.autoRecall) {
             api.on(
                 "before_prompt_build",
-                async (event: any, ctx: any) => {
+                async (event: PromptBuildEvent, ctx?: PromptBuildContext) => {
                     if (ctx?.sessionId?.includes("slug-gen") || ctx?.sessionId?.includes("slug-generator")) return;
                     if (!event.messages?.length) return;
                     const message = event.messages[event.messages.length - 1];
@@ -161,7 +229,7 @@ export const memoryLanceDBLitePlugin = {
                     const results = await retriever.retrieve({ query, limit: 3, scopeFilter });
 
                     if (results.length > 0) {
-                        const memories = results.map((r: any) => r.entry.text).join("\n---\n");
+                        const memories = results.map((r) => r.entry.text).join("\n---\n");
                         const injection = `\n<relevant-memories>\n${memories}\n</relevant-memories>\n`;
                         api.logger.info(`memory-lancedb-lite: auto-recalled ${results.length} memories`);
                         return { prependContext: injection };
@@ -174,7 +242,7 @@ export const memoryLanceDBLitePlugin = {
         if (config.autoCapture !== false) {
             api.on(
                 "before_prompt_build",
-                async (event: any, ctx: any) => {
+                async (event: PromptBuildEvent, ctx?: PromptBuildContext) => {
                     if (ctx?.sessionId?.includes("slug-gen") || ctx?.sessionId?.includes("slug-generator")) return;
                     if (!event?.messages?.length) return;
                     const message = event.messages[event.messages.length - 1];
@@ -189,9 +257,12 @@ export const memoryLanceDBLitePlugin = {
                     if (role === "assistant" && text.length < 20) return;
                     if (shouldSkipRetrieval(text, 10)) return;
 
-                    const sessionKey = `${ctx?.sessionId || "unknown"}:${event?.agentId || "unknown"}:${role}:${text}`;
+                    const dedupeKey = createHash("sha256")
+                        .update(`${ctx?.sessionId || "unknown"}:${event?.agentId || "unknown"}:${role}:${text}`)
+                        .digest("hex")
+                        .slice(0, 24);
                     const now = Date.now();
-                    const lastCapturedAt = recentlyCaptured.get(sessionKey) || 0;
+                    const lastCapturedAt = recentlyCaptured.get(dedupeKey) || 0;
                     if (now - lastCapturedAt < 60_000) return;
 
                     const targetScope = scopeManager.getDefaultScope(event.agentId);
@@ -211,7 +282,7 @@ export const memoryLanceDBLitePlugin = {
                             importance: role === "assistant" ? 0.6 : 0.7,
                             scope: targetScope,
                         });
-                        recentlyCaptured.set(sessionKey, now);
+                        recentlyCaptured.set(dedupeKey, now);
 
                         if (recentlyCaptured.size > 2000) {
                             for (const [k, ts] of recentlyCaptured.entries()) {
@@ -233,50 +304,32 @@ export const memoryLanceDBLitePlugin = {
             api.registerCommand({
                 name: "save",
                 description: "Manually trigger session summarization and ephemeral handover",
-                handler: async (args: any, context: any) => {
+                handler: async (ctx: SaveCommandCtx) => {
                     api.logger.info("save-command: /save triggered, starting handover...");
                     try {
-                        const agentId = context?.agentId || "main";
-                        const sessionsDir = join(OPENCLAW_DIR, "agents", agentId, "sessions");
-                        let targetFileName: string | undefined;
-                        let sessionId = context?.sessionId || context?.state?.sessionId;
+                        const rawSessions = await readFile(join(OPENCLAW_DIR, "agents", "main", "sessions", "sessions.json"), "utf8")
+                            .catch(() => "{}");
+                        const mainSessionStore = normalizeSessionStore(parseJsonOrDefaultObject(rawSessions));
+                        const resolvedFromMain = resolveSessionContextFromCommandCtx(ctx, mainSessionStore);
 
+                        const agentId = resolvedFromMain.agentId;
+                        const sessionsDir = join(OPENCLAW_DIR, "agents", agentId, "sessions");
+                        let sessionStore: Record<string, SessionStoreEntry> = {};
                         try {
                             const sessionsMapStr = await readFile(join(sessionsDir, "sessions.json"), "utf8").catch(() => "{}");
-                            const sessionsMap = JSON.parse(sessionsMapStr);
-                            const smap = sessionsMap.sessions || sessionsMap;
-                            if (sessionId && smap[sessionId]?.id) {
-                                sessionId = smap[sessionId].id;
-                            }
-                        } catch (e) { }
-
-                        if (sessionId) {
-                            targetFileName = `${sessionId}.jsonl`;
-                            try {
-                                await stat(join(sessionsDir, targetFileName));
-                            } catch (e) {
-                                targetFileName = undefined;
-                            }
+                            sessionStore = normalizeSessionStore(parseJsonOrDefaultObject(sessionsMapStr));
+                        } catch { }
+                        const resolved = resolveSessionContextFromCommandCtx(ctx, sessionStore);
+                        const resolvedSessionId = resolved.sessionId || resolvedFromMain.sessionId;
+                        if (!resolvedSessionId) {
+                            throw new Error("Unable to resolve current session ID from command context; refuse fallback for safety.");
                         }
+                        const targetFileName = await resolveSessionFileName(sessionsDir, resolvedSessionId);
 
-                        if (!targetFileName) {
-                            const files = await readdir(sessionsDir).catch(() => []);
-                            const sortedFiles = (await Promise.all(
-                                files.filter(f => f.endsWith(".jsonl") && !f.startsWith("test") && !f.includes("sessions.json") && !f.includes(".deleted.") && !f.includes(".reset.") && !f.includes(".tmp")).map(async f => {
-                                    try {
-                                        return { name: f, mtime: (await stat(join(sessionsDir, f))).mtimeMs };
-                                    } catch (e) { return null; }
-                                })
-                            )).filter((x): x is { name: string, mtime: number } => x !== null)
-                                .sort((a, b) => b.mtime - a.mtime);
-
-                            if (sortedFiles.length > 0) targetFileName = sortedFiles[0].name;
-                        }
-
-                        if (!targetFileName) throw new Error(`No session files found for agent: ${agentId}`);
+                        if (!targetFileName) throw new Error(`No session file found for resolved session ID: ${resolvedSessionId}`);
 
                         const filePath = join(sessionsDir, targetFileName);
-                        const content = await readFile(filePath, "utf-8");
+                        const content = await readTailUtf8(filePath, SAVE_MAX_SESSION_TAIL_BYTES);
                         const allLines = content.split("\n").filter(l => l.trim());
                         
                         // 1. 提取最後一個交接標籤 (從全量日誌中找，避免長對話遺失)
@@ -297,12 +350,12 @@ export const memoryLanceDBLitePlugin = {
                                     // 清理掉內容中的標籤以便純淨歸納
                                     text = text.replace(/<previous-session-handoff>[\s\S]*?<\/previous-session-handoff>/g, "").trim();
                                     return { role: e.message.role, content: text };
-                                } catch (e) { return null; }
+                                } catch { return null; }
                             })
                             .filter(e => e !== null);
 
                         const configuredMessageCount = parsePositiveInt(config.sessionMemory?.messageCount) || 15;
-                        const recentMessages = messages.slice(-Math.min(configuredMessageCount, 100));
+                        const recentMessages = messages.slice(-Math.min(configuredMessageCount, SAVE_MAX_SUMMARY_MESSAGES));
 
                         if (recentMessages.length === 0 && !previousHandoff) throw new Error("No conversation history found to save.");
 
@@ -352,11 +405,16 @@ export const memoryLanceDBLitePlugin = {
                             messages: [{ role: "user", content: prompt }]
                         });
 
-                        const summary = response.choices[0].message.content || "";
-                        const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
+                        const summary = (response.choices[0]?.message?.content || "").trim();
+                        if (!summary) {
+                            throw new Error("Summarizer returned empty handover context.");
+                        }
+                        const effectiveSessionKey = getSessionKeyForHandoverWrite(ctx, agentId);
+                        const ephemeralPath = getEphemeralHandoverPath(OPENCLAW_DIR, effectiveSessionKey);
                         await mkdir(dirname(ephemeralPath), { recursive: true });
                         await writeFile(ephemeralPath, JSON.stringify({
                             date: new Date().toISOString(),
+                            sessionKey: effectiveSessionKey,
                             context: summary
                         }));
 
@@ -373,20 +431,28 @@ export const memoryLanceDBLitePlugin = {
             // Handover Injection Hook
             api.on(
                 "before_prompt_build",
-                async (event: any, ctx: any) => {
+                async (_event: PromptBuildEvent, ctx?: PromptBuildContext) => {
                     if (ctx?.sessionId?.includes("slug-gen") || ctx?.sessionId?.includes("slug-generator")) return;
-                    const ephemeralPath = join(OPENCLAW_DIR, "memory", "lancedb-lite", "ephemeral_handover.json");
+                    const sessionKey = normalizeSessionKey(ctx?.sessionKey);
+                    if (!sessionKey) return;
+                    const ephemeralPath = getEphemeralHandoverPath(OPENCLAW_DIR, sessionKey);
+                    const consumePath = `${ephemeralPath}.consume-${randomUUID()}`;
                     try {
-                        const content = await readFile(ephemeralPath, "utf-8");
+                        await rename(ephemeralPath, consumePath);
+                        const content = await readFile(consumePath, "utf-8");
                         const data = JSON.parse(content);
                         if (data?.context) {
                             api.logger.info("ephemeral-injection: injecting handover context");
                             const injection = `\n<previous-session-handoff>\n${data.context}\n</previous-session-handoff>\n`;
-                            await unlink(ephemeralPath);
+                            await unlink(consumePath).catch(() => { });
                             return { prependContext: injection };
                         }
-                    } catch (e: any) {
-                        if (e.code !== "ENOENT") api.logger.error(`ephemeral-injection error: ${String(e)}`);
+                        await unlink(consumePath).catch(() => { });
+                    } catch (e: unknown) {
+                        if (!(e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "ENOENT")) {
+                            api.logger.error(`ephemeral-injection error: ${String(e)}`);
+                        }
+                        await unlink(consumePath).catch(() => { });
                     }
                 }
             );
@@ -404,9 +470,99 @@ export const memoryLanceDBLitePlugin = {
     }
 };
 
-function parsePluginConfig(value: any): PluginConfig {
-    // simplified for brevity in this fix, assumed valid as we just checked it
-    return value as PluginConfig;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getString(value: unknown, field: string, required = false): string | undefined {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (required) throw new Error(`Invalid config: ${field} must be a non-empty string`);
+    return undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+    if (typeof value === "boolean") return value;
+    return undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    return undefined;
+}
+
+function parsePluginConfig(value: unknown): PluginConfig {
+    if (!isPlainObject(value)) {
+        throw new Error("Invalid config: memory-lancedb-lite config must be an object");
+    }
+
+    const embeddingRaw = value.embedding;
+    if (!isPlainObject(embeddingRaw)) {
+        throw new Error("Invalid config: embedding is required");
+    }
+
+    const provider = getString(embeddingRaw.provider, "embedding.provider", true);
+    if (provider !== "openai-compatible") {
+        throw new Error(`Invalid config: embedding.provider must be \"openai-compatible\" (got ${provider})`);
+    }
+
+    const embedding: PluginConfig["embedding"] = {
+        provider: "openai-compatible",
+        apiKey: getString(embeddingRaw.apiKey, "embedding.apiKey", true)!,
+        model: getString(embeddingRaw.model, "embedding.model") || "text-embedding-3-small",
+        baseURL: getString(embeddingRaw.baseURL, "embedding.baseURL"),
+        dimensions: getNumber(embeddingRaw.dimensions),
+        taskQuery: getString(embeddingRaw.taskQuery, "embedding.taskQuery"),
+        taskPassage: getString(embeddingRaw.taskPassage, "embedding.taskPassage"),
+        normalized: getBoolean(embeddingRaw.normalized),
+    };
+
+    const retrievalRaw = isPlainObject(value.retrieval) ? value.retrieval : {};
+    const retrieval: PluginConfig["retrieval"] = {
+        mode: retrievalRaw.mode === "vector" ? "vector" : retrievalRaw.mode === "hybrid" ? "hybrid" : undefined,
+        vectorWeight: getNumber(retrievalRaw.vectorWeight),
+        bm25Weight: getNumber(retrievalRaw.bm25Weight),
+        minScore: getNumber(retrievalRaw.minScore),
+        rerank: retrievalRaw.rerank === "none" || retrievalRaw.rerank === "lightweight" || retrievalRaw.rerank === "cross-encoder"
+            ? retrievalRaw.rerank
+            : undefined,
+        candidatePoolSize: getNumber(retrievalRaw.candidatePoolSize),
+        rerankApiKey: getString(retrievalRaw.rerankApiKey, "retrieval.rerankApiKey"),
+        rerankModel: getString(retrievalRaw.rerankModel, "retrieval.rerankModel"),
+        rerankEndpoint: getString(retrievalRaw.rerankEndpoint, "retrieval.rerankEndpoint"),
+        rerankProvider: retrievalRaw.rerankProvider === "jina" || retrievalRaw.rerankProvider === "siliconflow" || retrievalRaw.rerankProvider === "voyage" || retrievalRaw.rerankProvider === "pinecone"
+            ? retrievalRaw.rerankProvider
+            : undefined,
+        recencyHalfLifeDays: getNumber(retrievalRaw.recencyHalfLifeDays),
+        recencyWeight: getNumber(retrievalRaw.recencyWeight),
+        filterNoise: getBoolean(retrievalRaw.filterNoise),
+        lengthNormAnchor: getNumber(retrievalRaw.lengthNormAnchor),
+        hardMinScore: getNumber(retrievalRaw.hardMinScore),
+        timeDecayHalfLifeDays: getNumber(retrievalRaw.timeDecayHalfLifeDays),
+    };
+
+    const sessionMemoryRaw = isPlainObject(value.sessionMemory) ? value.sessionMemory : {};
+    const summarizerRaw = isPlainObject(value.summarizer) ? value.summarizer : {};
+
+    return {
+        embedding,
+        dbPath: getString(value.dbPath, "dbPath"),
+        autoCapture: getBoolean(value.autoCapture),
+        autoRecall: getBoolean(value.autoRecall),
+        autoRecallMinLength: getNumber(value.autoRecallMinLength),
+        captureAssistant: getBoolean(value.captureAssistant),
+        retrieval,
+        scopes: isPlainObject(value.scopes) ? value.scopes as PluginConfig["scopes"] : undefined,
+        enableManagementTools: getBoolean(value.enableManagementTools),
+        sessionMemory: {
+            enabled: getBoolean(sessionMemoryRaw.enabled),
+            messageCount: getNumber(sessionMemoryRaw.messageCount),
+        },
+        summarizer: {
+            apiKey: getString(summarizerRaw.apiKey, "summarizer.apiKey"),
+            model: getString(summarizerRaw.model, "summarizer.model"),
+            baseURL: getString(summarizerRaw.baseURL, "summarizer.baseURL"),
+        },
+    };
 }
 
 export default memoryLanceDBLitePlugin;

@@ -1,12 +1,17 @@
 {
     "name": "memory-lancedb-lite",
-    "version": "1.1.4",
+    "version": "1.1.7",
     "description": "Streamlined, security-hardened LanceDB memory plugin for OpenClaw — Hybrid Retrieval, Cross-Encoder Rerank, Multi-Scope Isolation",
     "type": "module",
     "main": "dist/index.js",
     "scripts": {
         "build": "tsc",
-        "dev": "tsc --watch"
+        "dev": "tsc --watch",
+        "test": "npm run build && node tests/run-tests.mjs",
+        "test:e2e:save": "npm run build && bash scripts/e2e-save-smoke.sh",
+        "test:all": "bash scripts/test-all.sh",
+        "test:all:no-e2e": "bash scripts/test-all.sh --no-e2e",
+        "test:all:e2e-only": "bash scripts/test-all.sh --e2e-only"
     },
     "dependencies": {
         "@lancedb/lancedb": "0.26.2",
