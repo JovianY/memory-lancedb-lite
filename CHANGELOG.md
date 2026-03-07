@@ -33,6 +33,10 @@ All notable changes to `memory-lancedb-lite` will be documented in this file.
   - `test:runtime:smoke`
   - `test:live:apis`
 
+### Release validation status
+- Local deterministic/runtime validation: **PASS** (`npm run test:all:no-e2e`).
+- Real gateway `/save` e2e: depends on active OpenClaw gateway health; may fail on known OpenClaw instability (`uv_interface_addresses`, websocket `1006`) even when plugin logic is correct.
+
 ## [1.1.7] - 2026-03-07
 
 ### Added

@@ -298,6 +298,21 @@ memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mod
 
 Use these commands as the standard regression entrypoints:
 
+### Quick verify (3 steps)
+
+Use this before publishing or asking others to try the plugin:
+
+```bash
+# 1) Core regression (build + runtime smoke + deterministic + node:test)
+npm run test:all:no-e2e
+
+# 2) Runtime/install path smoke (native LanceDB + temp DB CRUD)
+npm run test:runtime:smoke
+
+# 3) Real gateway /save e2e smoke
+npm run test:e2e:save
+```
+
 ```bash
 # Full suite: build + runtime smoke + deterministic tests + node:test compatibility + gateway e2e smoke
 npm run test:all
