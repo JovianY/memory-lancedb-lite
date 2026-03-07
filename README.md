@@ -181,7 +181,7 @@ The plugin uses the OpenAI SDK under the hood, but supports **any provider with 
 ## Configuration
 
 > **⚠️ Important (OpenClaw 2026.3.2+):**
-> Since the 3/2 update, OpenClaw defaults to a restricted `"messaging"` profile. To allow this plugin to read/write `MEMORY.md` and manage long-term memory, you **must** set `"profile": "full"` for your agents in `openclaw.json`.
+> Since the 3/2 update, OpenClaw defaults to a restricted `"messaging"` profile. To allow this plugin to write ephemeral handover files (the `/save` command) and perform background vector database operations, you **must** set `"profile": "full"` for your agents in `openclaw.json`. Without this, the agent will appear to "forget" everything after a session reset.
 
 Add the following to your OpenClaw config (`~/.openclaw/openclaw.json` or `~/.openclaw/config.json`).
 
