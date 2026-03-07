@@ -320,7 +320,18 @@ export const memoryLanceDBLitePlugin = {
                             sessionStore = normalizeSessionStore(parseJsonOrDefaultObject(sessionsMapStr));
                         } catch { }
                         const resolved = resolveSessionContextFromCommandCtx(ctx, sessionStore);
-                        const resolvedSessionId = resolved.sessionId || resolvedFromMain.sessionId;
+                        let resolvedSessionId = resolved.sessionId || resolvedFromMain.sessionId;
+                        if (!resolvedSessionId && ctx?.channel === "webchat") {
+                            const webchatMainKey = `agent:${agentId}:main`;
+                            resolvedSessionId =
+                                sessionStore[webchatMainKey]?.id ||
+                                sessionStore[webchatMainKey]?.sessionId ||
+                                mainSessionStore[webchatMainKey]?.id ||
+                                mainSessionStore[webchatMainKey]?.sessionId;
+                            if (resolvedSessionId) {
+                                api.logger.warn(`save-command: resolved webchat fallback session id via ${webchatMainKey}`);
+                            }
+                        }
                         if (!resolvedSessionId) {
                             throw new Error("Unable to resolve current session ID from command context; refuse fallback for safety.");
                         }
@@ -409,7 +420,10 @@ export const memoryLanceDBLitePlugin = {
                         if (!summary) {
                             throw new Error("Summarizer returned empty handover context.");
                         }
-                        const effectiveSessionKey = getSessionKeyForHandoverWrite(ctx, agentId);
+                        const effectiveSessionKey =
+                            normalizeSessionKey(resolved.sessionKey) ||
+                            normalizeSessionKey(resolvedFromMain.sessionKey) ||
+                            getSessionKeyForHandoverWrite(ctx, agentId);
                         const ephemeralPath = getEphemeralHandoverPath(OPENCLAW_DIR, effectiveSessionKey);
                         await mkdir(dirname(ephemeralPath), { recursive: true });
                         await writeFile(ephemeralPath, JSON.stringify({
@@ -422,6 +436,15 @@ export const memoryLanceDBLitePlugin = {
                         const preview = summary.length > 60 ? summary.slice(0, 60).replace(/\n/g, " ") + "..." : summary.replace(/\n/g, " ");
                         return { text: `✅ 交接儲存成功！\n\n**存檔摘要：**\n> ${preview}\n\n下一對話將自動載入此語境。` };
                     } catch (err) {
+                        const ctxLog = {
+                            channel: (ctx as any)?.channel,
+                            from: (ctx as any)?.from,
+                            to: (ctx as any)?.to,
+                            sessionKey: (ctx as any)?.sessionKey,
+                            sessionId: (ctx as any)?.sessionId,
+                            agentId: (ctx as any)?.agentId,
+                        };
+                        api.logger.error(`save-command context: ${JSON.stringify(ctxLog)}`);
                         api.logger.error(`save-command failed: ${String(err)}`);
                         return { text: `❌ 交接失敗：${String(err)}` };
                     }

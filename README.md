@@ -283,7 +283,7 @@ This plugin supports any OpenAI-compatible embeddings endpoint. Example config s
 After restarting OpenClaw, check the logs for:
 
 ```
-memory-lancedb-lite@1.0.0: plugin registered (db: ~/.openclaw/memory/lancedb-lite, model: ...)
+memory-lancedb-lite@1.1.9: plugin registered (db: ~/.openclaw/memory/lancedb-lite, model: ...)
 memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mode: hybrid, FTS: enabled)
 ```
 
@@ -348,10 +348,13 @@ Notes:
 - `tests/run-tests.mjs` (deterministic suite):
   - `/save` happy path: handover write + one-time injection consume
   - `/save` multi-agent route correctness
+  - `/save` sessionId-only context resolves to matched session key
+  - `/save` webchat fallback for non-main agent (`ctx.agentId`)
+  - `/save` legacy raw target-id write/inject consistency
   - `/save` error injection: malformed `sessions.json` fail-closed
   - `/save` error injection: summarizer failure does not persist handover
 - `tests/save-command.integration.test.mjs` (`node:test`):
-  - same `/save` flows under `node:test` runner for compatibility checks
+  - mirrors the same `/save` coverage under `node:test` for compatibility checks
 - `tests/index.behavior.test.mjs`:
   - plugin config guardrails (invalid config rejected)
   - auto-capture + auto-recall behavior flow

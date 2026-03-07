@@ -11,6 +11,17 @@ All notable changes to `memory-lancedb-lite` will be documented in this file.
   - `openclaw.plugin.json`
   - `src/index.ts` plugin meta/log version string
   - `README.md` install example
+- `/save` handover key write-path now prefers resolved session keys (including session-store reverse lookup by `sessionId`) before falling back to `agent:<id>:main`, preventing legacy-context key drift.
+
+### Added
+- `/save` coverage expansion for session-context edge paths:
+  - `sessionId`-only command context resolves and writes handover under the matched channel session key.
+  - `webchat` fallback supports non-`main` agent via `ctx.agentId` (e.g. `agent:coder:main`).
+  - Legacy raw target-id command context writes/consumes handover using the resolved channel session key.
+- New test cases added to both deterministic and `node:test` suites:
+  - `tests/save-command.integration.test.mjs`
+  - `tests/run-tests.mjs`
+  - `tests/session-handover.test.mjs`
 
 ## [1.1.8] - 2026-03-07
 

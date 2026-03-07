@@ -164,6 +164,25 @@ addTest("session-utils basics", async () => {
   assert.equal(resolved.agentId, "coder");
   assert.equal(resolved.sessionId, "sess-abc");
 
+  const resolvedLegacy = resolveSessionContextFromCommandCtx(
+    { channel: "discord", to: "1476802472071921666" },
+    { "agent:main:discord:channel:1476802472071921666": { id: "sess-discord-1" } },
+  );
+  assert.equal(resolvedLegacy.sessionId, "sess-discord-1");
+
+  const resolvedWrapped = resolveSessionContextFromCommandCtx(
+    { channel: "discord", to: "<#1476802472071921666>" },
+    { "agent:main:discord:channel:1476802472071921666": { id: "sess-discord-2" } },
+  );
+  assert.equal(resolvedWrapped.sessionId, "sess-discord-2");
+
+  const resolvedBySessionId = resolveSessionContextFromCommandCtx(
+    { channel: "discord", sessionId: "sess-discord-3" },
+    { "agent:main:discord:channel:1476802472071921667": { id: "sess-discord-3" } },
+  );
+  assert.equal(resolvedBySessionId.sessionKey, "agent:main:discord:channel:1476802472071921667");
+  assert.equal(resolvedBySessionId.sessionId, "sess-discord-3");
+
   assert.equal(
     getSessionKeyForHandoverWrite({ to: "agent:main:discord:channel:123" }, "main"),
     "agent:main:discord:channel:123",
@@ -343,6 +362,167 @@ addTest("error injection: summarizer failure returns error and no handover file"
       assert.match(reply.text, /交接失敗/);
 
       const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      await assertPathMissing(handoverPath);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+addTest("webchat /save fallback resolves agent:main:main session", async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:main:main";
+    const sessionId = "sess-main-webchat-001";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "main",
+        sessionKey,
+        sessionId,
+        messages: [
+          jsonlMessage("user", "webchat fallback test"),
+          jsonlMessage("assistant", "ok"),
+        ],
+      });
+
+      const { api, commands } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "webchat", commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+addTest("sessionId-only /save persists under matched session key", async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:main:discord:channel:4101";
+    const sessionId = "sess-main-sessionid-only";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "main",
+        sessionKey,
+        sessionId,
+        messages: [jsonlMessage("user", "sessionId only path")],
+      });
+
+      const { api, commands } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "discord", sessionId, commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+      const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      const stored = JSON.parse(await readFile(handoverPath, "utf8"));
+      assert.equal(stored.sessionKey, sessionKey);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+addTest("webchat /save fallback supports non-main agent", async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:coder:main";
+    const sessionId = "sess-coder-webchat-001";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "coder",
+        sessionKey,
+        sessionId,
+        messages: [jsonlMessage("user", "coder webchat fallback path")],
+      });
+
+      const { api, commands } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "webchat", agentId: "coder", commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+      const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      const stored = JSON.parse(await readFile(handoverPath, "utf8"));
+      assert.equal(stored.sessionKey, sessionKey);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+addTest("legacy target-id /save inject path uses resolved session key", async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:main:discord:channel:555001";
+    const sessionId = "sess-main-legacy-target";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "main",
+        sessionKey,
+        sessionId,
+        messages: [jsonlMessage("user", "legacy channel id path")],
+      });
+
+      const { api, commands, hooks } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "discord", to: "555001", commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+
+      const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      const stored = JSON.parse(await readFile(handoverPath, "utf8"));
+      assert.equal(stored.sessionKey, sessionKey);
+
+      const beforePromptBuild = getBeforePromptBuildHook(hooks);
+      const injected = await beforePromptBuild(
+        { messages: [{ role: "user", content: "下一句" }] },
+        { sessionKey, sessionId: "new-session-legacy" },
+      );
+      assert.ok(injected?.prependContext?.includes("這是測試交接摘要"));
       await assertPathMissing(handoverPath);
     } finally {
       await summarizer.close();

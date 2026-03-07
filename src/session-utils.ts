@@ -68,8 +68,61 @@ function getSessionIdByKey(store: Record<string, SessionStoreEntry>, key?: strin
   return typeof id === "string" && id.trim() ? id.trim() : undefined;
 }
 
+function getSessionKeyBySessionId(store: Record<string, SessionStoreEntry>, sessionId?: string): string | undefined {
+  if (typeof sessionId !== "string" || !sessionId.trim()) return undefined;
+  const target = sessionId.trim();
+  for (const [key, entry] of Object.entries(store)) {
+    const id = entry?.id || entry?.sessionId;
+    if (typeof id === "string" && id.trim() === target) return key;
+  }
+  return undefined;
+}
+
 function isLikelySessionKey(value: unknown): value is string {
   return typeof value === "string" && /^agent:[^:]+:/i.test(value.trim());
+}
+
+function pushUnique(arr: string[], value?: string): void {
+  const normalized = normalizeSessionKey(value);
+  if (!normalized) return;
+  if (!arr.includes(normalized)) arr.push(normalized);
+}
+
+function inferSessionKeyCandidates(ctx: SaveCommandCtx, agentIdHint: string): string[] {
+  const out: string[] = [];
+  const channel = typeof ctx.channel === "string" ? ctx.channel.trim().toLowerCase() : "";
+  if (!channel) return out;
+
+  const rawTargets = [ctx.to, ctx.from]
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  const targetTokens = new Set<string>();
+  for (const raw of rawTargets) {
+    targetTokens.add(raw);
+    const unwrapped = raw.replace(/[<>\s]/g, "");
+    if (unwrapped) targetTokens.add(unwrapped);
+    if (unwrapped.includes(":")) {
+      const tail = unwrapped.split(":").filter(Boolean).pop();
+      if (tail) targetTokens.add(tail);
+    }
+    for (const m of unwrapped.matchAll(/[0-9]{6,}/g)) {
+      if (m[0]) targetTokens.add(m[0]);
+    }
+  }
+
+  for (const target of targetTokens) {
+    if (isLikelySessionKey(target)) {
+      pushUnique(out, target);
+      continue;
+    }
+    // Legacy command ctx often exposes plain channel/user id in `to`/`from`.
+    pushUnique(out, `agent:${agentIdHint}:${channel}:channel:${target}`);
+    pushUnique(out, `agent:${agentIdHint}:${channel}:user:${target}`);
+    pushUnique(out, `agent:${agentIdHint}:${channel}:${target}`);
+  }
+  return out;
 }
 
 export function resolveSessionContextFromCommandCtx(
@@ -79,17 +132,33 @@ export function resolveSessionContextFromCommandCtx(
   const explicitAgentId = (typeof ctx.agentId === "string" && ctx.agentId.trim()) ? ctx.agentId.trim() : undefined;
   const keyCandidates: string[] = [];
   for (const candidate of [ctx.sessionKey, ctx.to, ctx.from]) {
-    if (isLikelySessionKey(candidate)) keyCandidates.push(candidate.trim());
+    if (isLikelySessionKey(candidate)) pushUnique(keyCandidates, candidate);
   }
 
-  const resolvedSessionKey = keyCandidates
-    .map(k => normalizeSessionKey(k))
-    .find((k): k is string => Boolean(k));
+  const inferredAgentId = parseAgentIdFromSessionKey(keyCandidates[0]);
+  const agentIdHint = explicitAgentId || inferredAgentId || "main";
+  for (const candidate of inferSessionKeyCandidates(ctx, agentIdHint)) {
+    pushUnique(keyCandidates, candidate);
+  }
 
-  const inferredAgentId = parseAgentIdFromSessionKey(resolvedSessionKey);
-  const agentId = explicitAgentId || inferredAgentId || "main";
-  const byKey = getSessionIdByKey(sessionStore, resolvedSessionKey);
+  let resolvedSessionKey: string | undefined = keyCandidates[0];
+  let byKey: string | undefined;
+  for (const candidate of keyCandidates) {
+    const hit = getSessionIdByKey(sessionStore, candidate);
+    if (hit) {
+      resolvedSessionKey = candidate;
+      byKey = hit;
+      break;
+    }
+  }
+
+  const resolvedAgentId = parseAgentIdFromSessionKey(resolvedSessionKey);
+  const agentId = explicitAgentId || resolvedAgentId || "main";
   const byCtxSessionId = typeof ctx.sessionId === "string" && ctx.sessionId.trim() ? ctx.sessionId.trim() : undefined;
+  const keyBySessionId = !resolvedSessionKey ? getSessionKeyBySessionId(sessionStore, byCtxSessionId) : undefined;
+  if (keyBySessionId) {
+    resolvedSessionKey = keyBySessionId;
+  }
 
   return {
     agentId,

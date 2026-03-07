@@ -38,6 +38,46 @@ test("resolveSessionContextFromCommandCtx falls back to explicit sessionId", () 
   assert.equal(resolved.sessionId, "manual-session-id");
 });
 
+test("resolveSessionContextFromCommandCtx maps explicit sessionId back to session key when available", () => {
+  const resolved = resolveSessionContextFromCommandCtx(
+    { channel: "discord", sessionId: "sess-main-77" },
+    {
+      "agent:main:discord:channel:777": { id: "sess-main-77" },
+    },
+  );
+
+  assert.equal(resolved.agentId, "main");
+  assert.equal(resolved.sessionKey, "agent:main:discord:channel:777");
+  assert.equal(resolved.sessionId, "sess-main-77");
+});
+
+test("resolveSessionContextFromCommandCtx infers discord session key from legacy command ctx", () => {
+  const sessionStore = {
+    "agent:main:discord:channel:1476802472071921666": { id: "sess-discord-1" },
+  };
+  const resolved = resolveSessionContextFromCommandCtx(
+    { channel: "discord", to: "1476802472071921666" },
+    sessionStore,
+  );
+
+  assert.equal(resolved.agentId, "main");
+  assert.equal(resolved.sessionKey, "agent:main:discord:channel:1476802472071921666");
+  assert.equal(resolved.sessionId, "sess-discord-1");
+});
+
+test("resolveSessionContextFromCommandCtx normalizes wrapped discord channel target", () => {
+  const sessionStore = {
+    "agent:main:discord:channel:1476802472071921666": { id: "sess-discord-2" },
+  };
+  const resolved = resolveSessionContextFromCommandCtx(
+    { channel: "discord", to: "<#1476802472071921666>" },
+    sessionStore,
+  );
+
+  assert.equal(resolved.sessionKey, "agent:main:discord:channel:1476802472071921666");
+  assert.equal(resolved.sessionId, "sess-discord-2");
+});
+
 test("getSessionKeyForHandoverWrite prefers command session key candidates", () => {
   assert.equal(
     getSessionKeyForHandoverWrite({ to: "agent:main:discord:channel:123" }, "main"),

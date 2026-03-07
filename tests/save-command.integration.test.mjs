@@ -354,3 +354,166 @@ test("error injection: summarizer failure returns /save error and does not persi
     }
   });
 });
+
+test("webchat /save resolves via agent:main:main fallback", { concurrency: false }, async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:main:main";
+    const sessionId = "sess-main-webchat-001";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "main",
+        sessionKey,
+        sessionId,
+        messages: [
+          jsonlMessage("user", "這是 webchat fallback 測試"),
+          jsonlMessage("assistant", "收到"),
+        ],
+      });
+
+      const { api, commands } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "webchat", commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+test("sessionId-only /save resolves session and persists to matched session key", { concurrency: false }, async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:main:discord:channel:4101";
+    const sessionId = "sess-main-sessionid-only";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "main",
+        sessionKey,
+        sessionId,
+        messages: [jsonlMessage("user", "sessionId only path")],
+      });
+
+      const { api, commands } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "discord", sessionId, commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+
+      const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      const stored = JSON.parse(await readFile(handoverPath, "utf8"));
+      assert.equal(stored.sessionKey, sessionKey);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+test("webchat /save fallback supports non-main agent via ctx.agentId", { concurrency: false }, async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:coder:main";
+    const sessionId = "sess-coder-webchat-001";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "coder",
+        sessionKey,
+        sessionId,
+        messages: [jsonlMessage("user", "coder webchat fallback path")],
+      });
+
+      const { api, commands } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "webchat", agentId: "coder", commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+
+      const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      const stored = JSON.parse(await readFile(handoverPath, "utf8"));
+      assert.equal(stored.sessionKey, sessionKey);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
+
+test("legacy target-id /save writes handover under resolved channel session key and injects once", { concurrency: false }, async () => {
+  await withTempHome(async (home) => {
+    const sessionKey = "agent:main:discord:channel:555001";
+    const sessionId = "sess-main-legacy-target";
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
+    try {
+      await writeSessionFiles({
+        home,
+        agentId: "main",
+        sessionKey,
+        sessionId,
+        messages: [jsonlMessage("user", "legacy channel id path")],
+      });
+
+      const { api, commands, hooks } = buildFakeApi({
+        pluginConfig: {
+          embedding: { provider: "openai-compatible", apiKey: "test-key", model: "text-embedding-3-small" },
+          autoCapture: false,
+          autoRecall: false,
+          enableManagementTools: false,
+          sessionMemory: { enabled: true, messageCount: 15 },
+          summarizer: { baseURL: summarizer.baseURL, model: "mock-model", apiKey: "mock-key" },
+        },
+      });
+
+      await memoryPlugin.register(api);
+      const saveHandler = getSaveHandler(commands);
+      const reply = await saveHandler({ channel: "discord", to: "555001", commandBody: "/save" });
+      assert.match(reply.text, /交接儲存成功/);
+
+      const handoverPath = getEphemeralHandoverPath(join(home, ".openclaw"), sessionKey);
+      const stored = JSON.parse(await readFile(handoverPath, "utf8"));
+      assert.equal(stored.sessionKey, sessionKey);
+
+      const beforePromptBuild = getBeforePromptBuildHook(hooks);
+      const injected = await beforePromptBuild(
+        { messages: [{ role: "user", content: "下一句" }] },
+        { sessionKey, sessionId: "new-session-legacy" },
+      );
+      assert.ok(injected?.prependContext?.includes("這是測試交接摘要"));
+      await assert.rejects(stat(handoverPath), /ENOENT/);
+    } finally {
+      await summarizer.close();
+    }
+  });
+});
