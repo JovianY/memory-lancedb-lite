@@ -282,7 +282,7 @@ export const memoryLanceDBLitePlugin = {
                                 try {
                                     return JSON.parse(l);
                                 } catch (e) {
-                                    api.logger.warn(`handoff-command: 警告：無法解析日誌行，已跳過。錯誤：${String(e)}`);
+                                    api.logger.warn(`save-command: 警告：無法解析日誌行，已跳過。錯誤：${String(e)}`);
                                     return null;
                                 }
                             })
@@ -345,10 +345,10 @@ export const memoryLanceDBLitePlugin = {
                             context: summary
                         }));
 
-                        api.logger.info("handoff-command: successfully saved ephemeral handover");
+                        api.logger.info("save-command: successfully saved ephemeral handover");
                         return { text: "✅ 交接儲存成功！下一對話將自動載入此語境。" };
                     } catch (err) {
-                        api.logger.error(`handoff-command failed: ${String(err)}`);
+                        api.logger.error(`save-command failed: ${String(err)}`);
                         return { text: `❌ 交接失敗：${String(err)}` };
                     }
                 }
