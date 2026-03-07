@@ -277,24 +277,34 @@ export const memoryLanceDBLitePlugin = {
 
                         const filePath = join(sessionsDir, targetFileName);
                         const content = await readFile(filePath, "utf-8");
-                        const messages = content.split("\n")
-                            .filter(l => l.trim())
+                        const allLines = content.split("\n").filter(l => l.trim());
+                        
+                        // 1. 提取最後一個交接標籤 (從全量日誌中找，避免長對話遺失)
+                        let previousHandoff = "";
+                        const handoffRegex = /<previous-session-handoff>([\s\S]*?)<\/previous-session-handoff>/g;
+                        let match;
+                        while ((match = handoffRegex.exec(content)) !== null) {
+                            previousHandoff = match[1].trim();
+                        }
+
+                        // 2. 獲取最近對話 (排除標籤干擾，只取原始對話)
+                        const messages = allLines
                             .map(l => {
                                 try {
-                                    return JSON.parse(l);
-                                } catch (e) {
-                                    api.logger.warn(`save-command: 警告：無法解析日誌行，已跳過。錯誤：${String(e)}`);
-                                    return null;
-                                }
+                                    const e = JSON.parse(l);
+                                    if (e.type !== "message") return null;
+                                    let text = typeof e.message.content === "string" ? e.message.content : JSON.stringify(e.message.content);
+                                    // 清理掉內容中的標籤以便純淨歸納
+                                    text = text.replace(/<previous-session-handoff>[\s\S]*?<\/previous-session-handoff>/g, "").trim();
+                                    return { role: e.message.role, content: text };
+                                } catch (e) { return null; }
                             })
-                            .filter(e => e !== null && e.type === "message")
-                            .map(e => ({ role: e.message.role, content: e.message.content }));
+                            .filter(e => e !== null);
 
                         const configuredMessageCount = parsePositiveInt(config.sessionMemory?.messageCount) || 15;
-                        const messageCount = Math.min(configuredMessageCount, 100);
-                        const recentMessages = messages.slice(-messageCount);
+                        const recentMessages = messages.slice(-Math.min(configuredMessageCount, 100));
 
-                        if (recentMessages.length === 0) throw new Error("No messages found in session");
+                        if (recentMessages.length === 0 && !previousHandoff) throw new Error("No conversation history found to save.");
 
                         // Summarize — pick correct API key based on target
                         let summarizerBaseURL = config.summarizer?.baseURL || "https://openrouter.ai/api/v1";
@@ -327,15 +337,19 @@ export const memoryLanceDBLitePlugin = {
                             baseURL: summarizerBaseURL
                         });
 
-                        const prompt = `Compress the following conversation into a concise "State Fragment" for a perfect context handover. 
-                                      Captured user facts, active plans, behavioral constraints, and secret codewords. 
-                                      Use Traditional Chinese.`;
+                        const prompt = `You are a context synthesizer. Update the "State Fragment" for an agent handover.
+                                      PREVIOUS STATE: ${previousHandoff || "None"}
+                                      NEW MESSAGES: ${JSON.stringify(recentMessages)}
+                                      
+                                      TASK:
+                                      1. Merge the previous state with new information.
+                                      2. REMOVE facts that are likely already stored in long-term memory (like names or permanent preferences).
+                                      3. KEEP active task status, pending plans, behavioral constraints, and temporary secrets.
+                                      4. Output ONLY the new State Fragment in Traditional Chinese.`;
 
                         const response = await summarizer.chat.completions.create({
                             model: config.summarizer?.model || "gpt-4o-mini",
-                            messages: [
-                                { role: "user", content: `${prompt}\n\n=== CONVERSATION LOG ===\n${JSON.stringify(recentMessages)}\n=== END LOG ===\n\nPlease reply ONLY with the compressed State Fragment.` }
-                            ]
+                            messages: [{ role: "user", content: prompt }]
                         });
 
                         const summary = response.choices[0].message.content || "";
