@@ -227,7 +227,7 @@ You also need to add the plugin to `plugins.allow`, `plugins.load.paths`, and op
         "source": "path",
         "sourcePath": "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite",
         "installPath": "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite",
-        "version": "1.1.8",
+        "version": "1.1.9",
         "installedAt": "2026-03-02T00:00:00.000Z"
       }
     }

@@ -2,6 +2,16 @@
 
 All notable changes to `memory-lancedb-lite` will be documented in this file.
 
+## [1.1.9] - 2026-03-07
+
+### Changed
+- Version bump for expanded test-tooling surface and release-readiness docs updates.
+- Synchronized version references across:
+  - `package.json`
+  - `openclaw.plugin.json`
+  - `src/index.ts` plugin meta/log version string
+  - `README.md` install example
+
 ## [1.1.8] - 2026-03-07
 
 ### Fixed

@@ -178,13 +178,13 @@ export const memoryLanceDBLitePlugin = {
     meta: {
         id: "memory-lancedb-lite",
         name: "Memory (LanceDB Lite)",
-        version: "1.1.8",
+        version: "1.1.9",
         description: "Streamlined LanceDB-backed long-term memory",
         author: "OpenClaw Team",
         license: "MIT",
     },
     register: async (api: OpenClawApi) => {
-        api.logger.info("memory-lancedb-lite: loaded (v1.1.8)");
+        api.logger.info("memory-lancedb-lite: loaded (v1.1.9)");
         const OPENCLAW_DIR = join(homedir(), ".openclaw");
         const config = parsePluginConfig(api.config.plugins.entries["memory-lancedb-lite"]?.config);
 
