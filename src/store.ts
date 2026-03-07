@@ -355,8 +355,12 @@ export class MemoryStore {
         if (isFullId) {
             candidates = await this.table!.query().where(`id = '${escapeSqlLiteral(id)}'`).limit(1).toArray();
         } else {
-            const all = await this.table!.query().select(["id", "scope"]).limit(1000).toArray();
-            candidates = all.filter((r: any) => (r.id as string).startsWith(id));
+            const safePrefix = `${escapeSqlLiteral(id)}%`;
+            candidates = await this.table!
+                .query()
+                .select(["id", "scope"])
+                .where(`id LIKE '${safePrefix}'`)
+                .toArray();
             if (candidates.length > 1) {
                 throw new Error(`Ambiguous prefix "${id}" matches ${candidates.length} memories. Use a longer prefix or full ID.`);
             }
@@ -395,9 +399,37 @@ export class MemoryStore {
             query = query.where(conditions.join(" AND "));
         }
 
-        const results = await query
-            .select(["id", "text", "category", "scope", "importance", "timestamp", "metadata"])
-            .toArray();
+        const selectedFields = ["id", "text", "category", "scope", "importance", "timestamp", "metadata"] as const;
+        const fetchSize = clampInt(offset + limit, 1, 5000);
+        const queryAny = query as any;
+
+        // Fast path: when backend supports orderBy/limit, avoid full table scan.
+        if (typeof queryAny.orderBy === "function") {
+            try {
+                const fastResults = await queryAny
+                    .select(selectedFields as any)
+                    .orderBy("timestamp", "desc")
+                    .limit(fetchSize)
+                    .toArray();
+
+                return fastResults
+                    .map((row: any): MemoryEntry => ({
+                        id: row.id as string,
+                        text: row.text as string,
+                        vector: [],
+                        category: row.category as MemoryEntry["category"],
+                        scope: (row.scope as string | undefined) ?? "global",
+                        importance: Number(row.importance),
+                        timestamp: Number(row.timestamp),
+                        metadata: (row.metadata as string) || "{}",
+                    }))
+                    .slice(offset, offset + limit);
+            } catch {
+                // Fall back to compatibility path below.
+            }
+        }
+
+        const results = await query.select(selectedFields as any).toArray();
 
         return results
             .map((row): MemoryEntry => ({
@@ -460,8 +492,12 @@ export class MemoryStore {
             const safeId = escapeSqlLiteral(id);
             rows = await this.table!.query().where(`id = '${safeId}'`).limit(1).toArray();
         } else {
-            const all = await this.table!.query().select(["id", "text", "vector", "category", "scope", "importance", "timestamp", "metadata"]).limit(1000).toArray();
-            rows = all.filter((r: any) => (r.id as string).startsWith(id));
+            const safePrefix = `${escapeSqlLiteral(id)}%`;
+            rows = await this.table!
+                .query()
+                .select(["id", "text", "vector", "category", "scope", "importance", "timestamp", "metadata"])
+                .where(`id LIKE '${safePrefix}'`)
+                .toArray();
             if (rows.length > 1) {
                 throw new Error(`Ambiguous prefix "${id}" matches ${rows.length} memories. Use a longer prefix or full ID.`);
             }

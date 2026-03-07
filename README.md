@@ -38,8 +38,11 @@ When you chat with OpenClaw, the plugin automatically maintains a rolling window
 
 ### Long-Term Retention (Vector Storage)
 If `autoCapture` and `autoRecall` are enabled, the plugin works behind the scenes to:
-1. **Auto-Capture**: Silently evaluate your statements and run `memory_store` on facts, preferences, and important context.
-2. **Auto-Recall**: Behind the scenes, automatically retrieve relevant past memories from LanceDB and inject them into the agent's context window.
+1. **Auto-Capture (v1)**: Automatically capture useful user messages into memory with noise filtering and vector deduplication.
+2. **Auto-Recall**: Automatically retrieve relevant past memories from LanceDB and inject them into the agent's context window.
+3. **Manual Memory Tools**: Use `memory_store` / `memory_update` / `memory_forget` for explicit control.
+
+`captureAssistant` is optional (default: `false`). When enabled, assistant messages can also be auto-captured.
 
 You can also have the agent manually store (`memory_store`) or retrieve (`memory_recall`) information when specifically instructed.
 
@@ -177,6 +180,9 @@ The plugin uses the OpenAI SDK under the hood, but supports **any provider with 
 
 ## Configuration
 
+> **⚠️ Important (OpenClaw 2026.3.2+):**
+> Since the 3/2 update, OpenClaw defaults to a restricted `"messaging"` profile. To allow this plugin to read/write `MEMORY.md` and manage long-term memory, you **must** set `"profile": "full"` for your agents in `openclaw.json`.
+
 Add the following to your OpenClaw config (`~/.openclaw/openclaw.json` or `~/.openclaw/config.json`).
 
 You also need to add the plugin to `plugins.allow`, `plugins.load.paths`, and optionally set `plugins.slots.memory`.
@@ -221,7 +227,7 @@ You also need to add the plugin to `plugins.allow`, `plugins.load.paths`, and op
         "source": "path",
         "sourcePath": "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite",
         "installPath": "/home/YOUR_USER/.openclaw/workspace/extensions-dev/memory-lancedb-lite",
-        "version": "1.0.0",
+        "version": "1.1.4",
         "installedAt": "2026-03-02T00:00:00.000Z"
       }
     }
@@ -252,12 +258,13 @@ This plugin supports any OpenAI-compatible embeddings endpoint. Example config s
 | `embedding.baseURL` | string | OpenAI | Custom API endpoint for non-OpenAI providers |
 | `embedding.model` | string | — | Embedding model name |
 | `embedding.dimensions` | number | auto | Override vector dimensions (auto-detected for known models) |
-| `summarizer.apiKey` | string | `OPENAI_API_KEY` | API key for `/save` session summarizer |
+| `summarizer.apiKey` | string | `OPENCLAW_GATEWAY_TOKEN` or `OPENROUTER_API_KEY` | API key for `/save` session summarizer (depends on `summarizer.baseURL`) |
 | `summarizer.model` | string | `gpt-4o-mini` | LLM model for session summarizer |
-| `autoCapture` | boolean | `false` | Automatically capture important info from conversations |
+| `autoCapture` | boolean | `true` | Automatically capture useful user messages (noise-filtered + deduplicated) |
 | `autoRecall` | boolean | `false` | Automatically search memories on each message |
+| `captureAssistant` | boolean | `false` | Include assistant messages in auto-capture flow |
 | `sessionMemory.enabled` | boolean | `false` | Enable session-level memory tracking |
-| `sessionMemory.messageCount` | number | `10` | Number of messages to include in session context |
+| `sessionMemory.messageCount` | number | `15` | Number of recent messages used by `/save` summarization |
 | `enableManagementTools` | boolean | `false` | Enable `memory_stats` and `memory_list` tools |
 
 ## Agent Tools

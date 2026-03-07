@@ -82,6 +82,27 @@ function clamp01(value: number, fallback: number): number {
     return Math.min(1, Math.max(0, value));
 }
 
+function normalizeWeightPair(vectorWeight: number, bm25Weight: number): { vectorWeight: number; bm25Weight: number } {
+    const safeVector = Math.max(0, Number.isFinite(vectorWeight) ? vectorWeight : DEFAULT_RETRIEVAL_CONFIG.vectorWeight);
+    const safeBm25 = Math.max(0, Number.isFinite(bm25Weight) ? bm25Weight : DEFAULT_RETRIEVAL_CONFIG.bm25Weight);
+    if (safeVector === 0 && safeBm25 === 0) {
+        return {
+            vectorWeight: DEFAULT_RETRIEVAL_CONFIG.vectorWeight,
+            bm25Weight: DEFAULT_RETRIEVAL_CONFIG.bm25Weight,
+        };
+    }
+    return { vectorWeight: safeVector, bm25Weight: safeBm25 };
+}
+
+function normalizeRetrievalConfig(config: RetrievalConfig): RetrievalConfig {
+    const normalized = normalizeWeightPair(config.vectorWeight, config.bm25Weight);
+    return {
+        ...config,
+        vectorWeight: normalized.vectorWeight,
+        bm25Weight: normalized.bm25Weight,
+    };
+}
+
 // ============================================================================
 // Rerank Provider Adapters
 // ============================================================================
@@ -184,7 +205,9 @@ export class MemoryRetriever {
         private store: MemoryStore,
         private embedder: Embedder,
         private config: RetrievalConfig = DEFAULT_RETRIEVAL_CONFIG
-    ) { }
+    ) {
+        this.config = normalizeRetrievalConfig(this.config);
+    }
 
     async retrieve(context: RetrievalContext): Promise<RetrievalResult[]> {
         const { query, limit, scopeFilter, category } = context;
@@ -291,9 +314,14 @@ export class MemoryRetriever {
             const vectorScore = vectorResult ? vectorResult.score : 0;
             const bm25Hit = bm25Result ? 1 : 0;
 
+            const bm25Score = bm25Result ? bm25Result.score : 0;
+            const weightSum = this.config.vectorWeight + this.config.bm25Weight;
+            const normalizedScore = weightSum > 0
+                ? ((this.config.vectorWeight * vectorScore) + (this.config.bm25Weight * bm25Score)) / weightSum
+                : vectorScore;
             const fusedScore = vectorResult
-                ? clamp01(vectorScore + (bm25Hit * 0.15 * vectorScore), 0.1)
-                : clamp01(bm25Result!.score, 0.1);
+                ? clamp01(normalizedScore + (bm25Hit * 0.05), 0.1)
+                : clamp01(bm25Score, 0.1);
 
             fusedResults.push({
                 entry: baseResult.entry,
@@ -475,7 +503,7 @@ export class MemoryRetriever {
     }
 
     updateConfig(newConfig: Partial<RetrievalConfig>): void {
-        this.config = { ...this.config, ...newConfig };
+        this.config = normalizeRetrievalConfig({ ...this.config, ...newConfig });
     }
 
     getConfig(): RetrievalConfig {
@@ -506,6 +534,6 @@ export class MemoryRetriever {
 export function createRetriever(
     store: MemoryStore, embedder: Embedder, config?: Partial<RetrievalConfig>
 ): MemoryRetriever {
-    const fullConfig = { ...DEFAULT_RETRIEVAL_CONFIG, ...config };
+    const fullConfig = normalizeRetrievalConfig({ ...DEFAULT_RETRIEVAL_CONFIG, ...config });
     return new MemoryRetriever(store, embedder, fullConfig);
 }

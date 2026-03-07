@@ -3,6 +3,7 @@
     "name": "Memory (LanceDB Lite)",
     "description": "Streamlined LanceDB-backed long-term memory with hybrid retrieval, multi-scope isolation, and security hardening",
     "version": "1.1.4",
+    "main": "dist/index.js",
     "kind": "memory",
     "configSchema": {
         "type": "object",
@@ -54,7 +55,9 @@
                 "default": false
             },
             "autoCapture": {
-                "type": "boolean"
+                "type": "boolean",
+                "default": true,
+                "description": "Automatically capture user messages into long-term memory (with noise and duplicate filtering)"
             },
             "autoRecall": {
                 "type": "boolean",
@@ -67,7 +70,9 @@
                 "default": 15
             },
             "captureAssistant": {
-                "type": "boolean"
+                "type": "boolean",
+                "default": false,
+                "description": "When true, autoCapture also captures assistant messages (in addition to user messages)"
             },
             "retrieval": {
                 "type": "object",
@@ -178,14 +183,15 @@
                 "properties": {
                     "enabled": {
                         "type": "boolean",
-                        "default": true,
-                        "description": "Store session summaries to LanceDB on /new command"
+                        "default": false,
+                        "description": "Enable /save command and one-time handoff context injection"
                     },
                     "messageCount": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 100,
-                        "default": 15
+                        "default": 15,
+                        "description": "How many recent session messages are included in /save summarization"
                     }
                 }
             },
@@ -195,7 +201,7 @@
                 "properties": {
                     "apiKey": {
                         "type": "string",
-                        "description": "API key for the summarizer model (defaults to OPENAI_API_KEY environment variable)"
+                        "description": "API key for summarizer model. For local gateway baseURL it uses OPENCLAW_GATEWAY_TOKEN when omitted; otherwise falls back to OPENROUTER_API_KEY."
                     },
                     "model": {
                         "type": "string",
@@ -261,15 +267,20 @@
         },
         "autoCapture": {
             "label": "Auto-Capture",
-            "help": "Automatically capture important information from conversations"
+            "help": "Automatically capture useful user messages into memory"
         },
         "autoRecall": {
             "label": "Auto-Recall",
             "help": "Automatically inject relevant memories into context"
         },
+        "captureAssistant": {
+            "label": "Capture Assistant",
+            "help": "Also auto-capture assistant messages when Auto-Capture is enabled",
+            "advanced": true
+        },
         "sessionMemory.enabled": {
             "label": "Session Memory",
-            "help": "Store session summaries to LanceDB when /new is triggered"
+            "help": "Enable /save summarization and first-turn handoff injection"
         },
         "retrieval.rerank": {
             "label": "Reranking Mode",
@@ -284,7 +295,7 @@
         "summarizer.apiKey": {
             "label": "Summarizer API Key",
             "sensitive": true,
-            "placeholder": "Falls back to OPENAI_API_KEY if empty",
+            "placeholder": "Uses OPENCLAW_GATEWAY_TOKEN (local) or OPENROUTER_API_KEY",
             "advanced": true,
             "help": "LLM API Key used for /save session summarization"
         },
