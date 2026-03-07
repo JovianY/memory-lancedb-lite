@@ -299,7 +299,7 @@ memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mod
 Use these commands as the standard regression entrypoints:
 
 ```bash
-# Full suite: build + deterministic tests + node:test compatibility + gateway e2e smoke
+# Full suite: build + runtime smoke + deterministic tests + node:test compatibility + gateway e2e smoke
 npm run test:all
 
 # Recommended local CI/dev check when gateway is unstable or unavailable
@@ -307,12 +307,52 @@ npm run test:all:no-e2e
 
 # Real gateway /save smoke only (uses active local gateway)
 npm run test:all:e2e-only
+
+# Runtime/install environment smoke (LanceDB native module + CRUD path)
+npm run test:runtime:smoke
+
+# Live external API smoke (real embedding + optional rerank endpoint)
+npm run test:live:apis
+
+# Include live API smoke inside all-suite
+bash scripts/test-all.sh --no-e2e --with-live-apis
 ```
 
 Notes:
 - `test:all:e2e-only` and `test:e2e:save` exercise real `openclaw gateway call ...` flow.
 - On hosts affected by known OpenClaw gateway instability (`uv_interface_addresses`, WebSocket `1006`, transient timeout), e2e may fail even when plugin logic is correct.
 - The e2e script auto-cleans its synthetic session/handover artifacts after run.
+- `test:live:apis` is env-driven and non-mock:
+  - Embedding key: `MEMORY_LANCEDB_LIVE_EMBEDDING_API_KEY` (fallback: `GEMINI_API_KEY` / `OPENAI_API_KEY`)
+  - Embedding model/baseURL: `MEMORY_LANCEDB_LIVE_EMBEDDING_MODEL`, `MEMORY_LANCEDB_LIVE_EMBEDDING_BASE_URL`
+  - Rerank (optional but recommended): `MEMORY_LANCEDB_LIVE_RERANK_API_KEY`, `MEMORY_LANCEDB_LIVE_RERANK_ENDPOINT`, `MEMORY_LANCEDB_LIVE_RERANK_PROVIDER`, `MEMORY_LANCEDB_LIVE_RERANK_MODEL`
+  - Set `MEMORY_LANCEDB_LIVE_STRICT=1` to fail on network/API connectivity issues; default behavior is `SKIP` when endpoint is unreachable.
+
+### Coverage matrix (self-test)
+
+- `tests/run-tests.mjs` (deterministic suite):
+  - `/save` happy path: handover write + one-time injection consume
+  - `/save` multi-agent route correctness
+  - `/save` error injection: malformed `sessions.json` fail-closed
+  - `/save` error injection: summarizer failure does not persist handover
+- `tests/save-command.integration.test.mjs` (`node:test`):
+  - same `/save` flows under `node:test` runner for compatibility checks
+- `tests/index.behavior.test.mjs`:
+  - plugin config guardrails (invalid config rejected)
+  - auto-capture + auto-recall behavior flow
+- `tests/tools.unit.test.mjs`:
+  - all memory tools: `memory_recall`, `memory_store`, `memory_forget`, `memory_update`, `memory_stats`, `memory_list`
+  - tool registration and management-tool gating
+- `tests/retriever.unit.test.mjs`:
+  - hybrid fusion scoring
+  - vector fallback when FTS unavailable
+  - cross-encoder rerank path
+- `scripts/runtime-smoke.mjs`:
+  - verifies LanceDB native module load on current host
+  - validates runtime CRUD/search/list/stats/delete against temp DB
+- `scripts/live-api-smoke.mjs`:
+  - real external embedding API call (no mock)
+  - real external rerank endpoint call (no mock, when rerank env is set)
 
 ## Troubleshooting
 

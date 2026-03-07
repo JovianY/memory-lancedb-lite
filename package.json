@@ -8,6 +8,8 @@
         "build": "tsc",
         "dev": "tsc --watch",
         "test": "npm run build && node tests/run-tests.mjs",
+        "test:runtime:smoke": "npm run build && node scripts/runtime-smoke.mjs",
+        "test:live:apis": "npm run build && node scripts/live-api-smoke.mjs",
         "test:e2e:save": "npm run build && bash scripts/e2e-save-smoke.sh",
         "test:all": "bash scripts/test-all.sh",
         "test:all:no-e2e": "bash scripts/test-all.sh --no-e2e",

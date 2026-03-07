@@ -4,21 +4,26 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 MODE="full"
-case "${1:-}" in
-  --no-e2e)
-    MODE="no-e2e"
-    ;;
-  --e2e-only)
-    MODE="e2e-only"
-    ;;
-  "")
-    ;;
-  *)
-    echo "[test-all] unknown option: $1" >&2
-    echo "usage: bash scripts/test-all.sh [--no-e2e|--e2e-only]" >&2
-    exit 2
-    ;;
-esac
+WITH_LIVE_APIS=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-e2e)
+      MODE="no-e2e"
+      ;;
+    --e2e-only)
+      MODE="e2e-only"
+      ;;
+    --with-live-apis)
+      WITH_LIVE_APIS=1
+      ;;
+    *)
+      echo "[test-all] unknown option: $1" >&2
+      echo "usage: bash scripts/test-all.sh [--no-e2e|--e2e-only] [--with-live-apis]" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
 
 run_step() {
   local name="$1"
@@ -49,8 +54,12 @@ cd "$ROOT_DIR"
 
 if [[ "$MODE" != "e2e-only" ]]; then
   run_step "build" npm run build
+  run_step "runtime-smoke" node scripts/runtime-smoke.mjs
   run_step "deterministic-suite" node tests/run-tests.mjs
-  run_step "node-test-compat" node --test tests/session-handover.test.mjs tests/save-command.integration.test.mjs
+  run_step "node-test-compat" bash -lc 'node --test $(rg --files tests | rg "\\.test\\.mjs$" | tr "\n" " ")'
+  if [[ "$WITH_LIVE_APIS" == "1" ]]; then
+    run_step "live-api-smoke" node scripts/live-api-smoke.mjs
+  fi
 fi
 
 if [[ "$MODE" != "no-e2e" ]]; then

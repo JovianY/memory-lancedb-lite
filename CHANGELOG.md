@@ -13,9 +13,25 @@ All notable changes to `memory-lancedb-lite` will be documented in this file.
 - **Large-session handling for `/save`**: Handover summarization now reads a bounded tail window of session logs (`readTailUtf8`) instead of always loading full files.
 - **Observability consistency**: Retrieval/store fallback warnings now use plugin logger instead of direct `console.warn`.
 - **Auto-capture memory pressure**: De-dup cache key now uses a fixed-length hash instead of full message text payload.
+- **`node:test` stability for `/save` integration suite**: Replaced local HTTP summarizer mock with `fetch`-level mock in `tests/save-command.integration.test.mjs` to avoid Node 22 runner assertion crash in this environment while preserving the same behavior checks.
 
 ### Changed
 - Updated integration and deterministic tests to reflect fail-closed `/save` semantics for malformed/missing session mapping.
+- Expanded `node-test-compat` in `scripts/test-all.sh` to auto-run all `tests/*.test.mjs` files, not only a subset.
+
+### Added
+- New full-feature unit/behavior tests:
+  - `tests/tools.unit.test.mjs` (all memory tools + tool registration/gating)
+  - `tests/retriever.unit.test.mjs` (hybrid/vector/fts/rerank retrieval paths)
+  - `tests/index.behavior.test.mjs` (config guardrails + auto-capture/auto-recall flow)
+- Runtime/install-environment smoke test:
+  - `scripts/runtime-smoke.mjs` validates LanceDB native module load and temp-db CRUD/search/list/stats/delete path end-to-end.
+- Live external API smoke test:
+  - `scripts/live-api-smoke.mjs` validates real embedding API calls and real rerank endpoint calls (when env is configured).
+  - Adds `MEMORY_LANCEDB_LIVE_STRICT=1` mode to fail on connectivity/API errors; default mode reports `SKIP` when live endpoints are unreachable.
+- New npm scripts:
+  - `test:runtime:smoke`
+  - `test:live:apis`
 
 ## [1.1.7] - 2026-03-07
 

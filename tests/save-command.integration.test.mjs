@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -32,47 +31,56 @@ async function withTempHome(run) {
   }
 }
 
-async function startMockSummarizer({ onRequest, fail = false }) {
+function installFetchSummarizerMock({ onRequest, fail = false }) {
   const requests = [];
-  const server = http.createServer(async (req, res) => {
-    let body = "";
-    for await (const chunk of req) {
-      body += chunk;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input?.url;
+    if (typeof url === "string" && url.includes("/chat/completions")) {
+      const rawBody = init?.body;
+      const bodyText = typeof rawBody === "string"
+        ? rawBody
+        : rawBody instanceof Uint8Array
+          ? Buffer.from(rawBody).toString("utf8")
+          : "";
+      const parsed = bodyText ? JSON.parse(bodyText) : {};
+      requests.push(parsed);
+      if (onRequest) onRequest(parsed);
+
+      if (fail) {
+        return new Response("mock summarizer failure", { status: 500, headers: { "content-type": "text/plain" } });
+      }
+
+      return new Response(JSON.stringify({
+        id: "chatcmpl-mock",
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: "mock-model",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "這是測試交接摘要" },
+            finish_reason: "stop",
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
-    const parsed = body ? JSON.parse(body) : {};
-    requests.push(parsed);
-    if (onRequest) onRequest(parsed);
 
-    if (fail) {
-      res.statusCode = 500;
-      res.setHeader("content-type", "text/plain");
-      res.end("mock summarizer failure");
-      return;
+    if (typeof originalFetch === "function") {
+      return originalFetch(input, init);
     }
+    throw new Error(`unexpected fetch call without original fetch: ${String(url)}`);
+  };
 
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({
-      id: "chatcmpl-mock",
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: "mock-model",
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant", content: "這是測試交接摘要" },
-          finish_reason: "stop",
-        },
-      ],
-    }));
-  });
-
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const addr = server.address();
-  const port = typeof addr === "object" && addr ? addr.port : 0;
   return {
-    baseURL: `http://127.0.0.1:${port}/v1`,
+    baseURL: "https://mock.local/v1",
     requests,
-    close: async () => new Promise((resolve, reject) => server.close((err) => err ? reject(err) : resolve())),
+    close: async () => {
+      globalThis.fetch = originalFetch;
+    },
   };
 }
 
@@ -157,7 +165,7 @@ test("user scenario: /save stores handover and first next-turn injects once", { 
   await withTempHome(async (home) => {
     const sessionKey = "agent:main:discord:channel:1001";
     const sessionId = "sess-main-001";
-    const summarizer = await startMockSummarizer({ onRequest: null });
+    const summarizer = installFetchSummarizerMock({ onRequest: null });
     try {
       await writeSessionFiles({
         home,
@@ -219,7 +227,7 @@ test("multi-agent scenario: /save resolves coder session instead of main", { con
     const mainKey = "agent:main:discord:channel:2001";
     const coderKey = "agent:coder:discord:channel:9009";
     let observedPrompt = "";
-    const summarizer = await startMockSummarizer({
+    const summarizer = installFetchSummarizerMock({
       onRequest: (payload) => {
         observedPrompt = payload?.messages?.[0]?.content || "";
       },
@@ -267,7 +275,7 @@ test("multi-agent scenario: /save resolves coder session instead of main", { con
 test("error injection: malformed sessions.json fails closed without session fallback", { concurrency: false }, async () => {
   await withTempHome(async (home) => {
     let observedPrompt = "";
-    const summarizer = await startMockSummarizer({
+    const summarizer = installFetchSummarizerMock({
       onRequest: (payload) => {
         observedPrompt = payload?.messages?.[0]?.content || "";
       },
@@ -313,7 +321,7 @@ test("error injection: malformed sessions.json fails closed without session fall
 test("error injection: summarizer failure returns /save error and does not persist handover", { concurrency: false }, async () => {
   await withTempHome(async (home) => {
     const sessionKey = "agent:main:discord:channel:3001";
-    const summarizer = await startMockSummarizer({ fail: true });
+    const summarizer = installFetchSummarizerMock({ fail: true });
     try {
       await writeSessionFiles({
         home,
