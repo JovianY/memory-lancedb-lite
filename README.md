@@ -294,6 +294,26 @@ memory-lancedb-lite: initialized successfully (embedding: OK, retrieval: OK, mod
 3. Ask: *"What is my favorite color?"*
 4. If the agent answers correctly → memory is working! ✅
 
+### Automated test commands
+
+Use these commands as the standard regression entrypoints:
+
+```bash
+# Full suite: build + deterministic tests + node:test compatibility + gateway e2e smoke
+npm run test:all
+
+# Recommended local CI/dev check when gateway is unstable or unavailable
+npm run test:all:no-e2e
+
+# Real gateway /save smoke only (uses active local gateway)
+npm run test:all:e2e-only
+```
+
+Notes:
+- `test:all:e2e-only` and `test:e2e:save` exercise real `openclaw gateway call ...` flow.
+- On hosts affected by known OpenClaw gateway instability (`uv_interface_addresses`, WebSocket `1006`, transient timeout), e2e may fail even when plugin logic is correct.
+- The e2e script auto-cleans its synthetic session/handover artifacts after run.
+
 ## Troubleshooting
 
 | Issue | Solution |
