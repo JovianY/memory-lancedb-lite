@@ -83,7 +83,12 @@ If it correctly says "Purple Elephant," session memory is actively working.
 3. Start a completely new chat session by typing `/new` (this wipes the short-term context).
 4. Ask: *"Do you remember what my favorite pizza topping is?"*
 If it correctly retrieves "extra jalapeños," the LanceDB integration is functioning perfectly!
-## Quick Start
+## Safe Install (Recommended)
+
+This project intentionally does **not** provide a script that auto-edits your `openclaw.json`.
+Auto-editing user config can overwrite existing `plugins.entries` / `plugins.slots` setup.
+
+### Step 1: Install plugin files (safe; no config edits)
 
 ```bash
 # 1. Clone into OpenClaw extensions directory
@@ -95,12 +100,44 @@ cd memory-lancedb-lite
 chmod +x install.sh
 ./install.sh
 
-# 3. Configure (see Configuration section below)
-# 4. Restart OpenClaw
+# 3. Continue with manual config (Step 2 below)
 ```
 
 ### What the installer does
-The `install.sh` script automatically detects your platform, installs Node.js if missing, builds native LanceDB modules, and helps configure `openclaw.json`.
+The `install.sh` script automatically detects your platform, installs Node.js if missing, and builds native LanceDB modules.
+
+### Step 2: Add minimal config manually (merge into your existing `openclaw.json`)
+
+> Merge only the keys below into your existing config. Do **not** replace the whole file.
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "memory-lancedb-lite": {
+        "enabled": true,
+        "config": {
+          "embedding": {
+            "apiKey": "${OPENAI_API_KEY}"
+          }
+        }
+      }
+    },
+    "slots": {
+      "memory": "memory-lancedb-lite"
+    }
+  }
+}
+```
+
+`embedding.model` is optional in minimal config. Default is `text-embedding-3-small`.
+
+### Step 3: Restart + verify
+
+```bash
+openclaw gateway restart
+openclaw plugins list | rg "memory-lancedb-lite|Memory \(LanceDB Lite\)"
+```
 
 ## Migrating from Other Memory Plugins
 
